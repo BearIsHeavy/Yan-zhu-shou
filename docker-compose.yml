@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  # MySQL Database Setup
+  mysql:
+    image: mysql:8.0
+    container_name: backend_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password_here
+      MYSQL_DATABASE: backend_db
+      MYSQL_USER: api_user
+      MYSQL_PASSWORD: api_password_here
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  # Redis In-Memory Database Setup
+  redis:
+    image: redis:7.2-alpine
+    container_name: backend_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+# Define persistent storage
+volumes:
+  mysql_data:
+  redis_data:
