@@ -11,13 +11,14 @@ fastapi==0.133.1
 h11==0.16.0
 httptools==0.7.1
 idna==3.11
-passlib==1.7.4
 pycparser==3.0
 pydantic==2.12.5
 pydantic-settings==2.13.1
 pydantic_core==2.41.5
+PyJWT==2.11.0
 PyMySQL==1.1.2
 python-dotenv==1.2.1
+python-multipart==0.0.22
 PyYAML==6.0.3
 redis==7.2.1
 SQLAlchemy==2.0.47
