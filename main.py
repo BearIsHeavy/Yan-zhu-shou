@@ -2,27 +2,52 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
-# Import the files we just created
-from database import engine, Base, get_db
+# Import local modules
+from database import engine, Base, get_db, redis_client
 import models
 import schemas
 import security
 
-# Ensure tables are created in MySQL
+# Ensure database tables are created automatically
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Backend API")
+# Initialize FastAPI with metadata for beautiful frontend API documentation
+app = FastAPI(
+    title="Secure Backend API",
+    description="API documentation for user authentication and management.",
+    version="1.0.0"
+)
 
 
-@app.post("/register", response_model=schemas.UserResponse, status_code=status.HTTP_201_CREATED)
-def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    # 1. Hash the incoming password
+@app.get(
+    "/health",
+    tags=["System"],
+    summary="System Health Check",
+    response_description="Returns the connection status of the API, MySQL, and Redis."
+)
+def health_check(db: Session = Depends(get_db)) -> dict[str, str]:
+    """Verify that all infrastructure components are running and reachable."""
+    redis_status = "connected" if redis_client.ping() else "disconnected"
+    return {
+        "status": "healthy",
+        "database": "connected",
+        "redis": redis_status
+    }
+
+
+@app.post(
+    "/register",
+    response_model=schemas.UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Authentication"],
+    summary="Register a new user",
+    description="Creates a new user account, securely hashes the password, and saves it to MySQL."
+)
+def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)) -> models.User:
+    """Handle user registration with duplicate email protection."""
     hashed_pw = security.get_password_hash(user.password)
-
-    # 2. Create the SQLAlchemy model instance
     db_user = models.User(email=user.email, hashed_password=hashed_pw)
 
-    # 3. Save to MySQL
     try:
         db.add(db_user)
         db.commit()
