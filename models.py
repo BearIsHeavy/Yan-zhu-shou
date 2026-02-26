@@ -1,3 +1,4 @@
+# models.py
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import String, Boolean
 from database import Base
