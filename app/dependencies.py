@@ -5,9 +5,8 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 # Import our local modules
-import models
-import security
-from database import get_db, redis_client
+from app import security, models
+from app.database import get_db, redis_client
 
 # This tells FastAPI to look for a Bearer token in the Authorization header.
 # "tokenUrl='login'" tells the auto-generated Swagger UI where to send the login request.
