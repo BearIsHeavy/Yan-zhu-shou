@@ -1,3 +1,6 @@
 .venv
 .idea
 __pycache__
+test.csv
+.DS_Store
+openapi.json

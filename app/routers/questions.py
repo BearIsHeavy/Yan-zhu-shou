@@ -1,3 +1,4 @@
+# questions.py
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
 import csv
@@ -25,15 +26,19 @@ async def upload_questions(
     if file.filename and file.filename.endswith(".csv"):
         reader = csv.DictReader(io.StringIO(decoded_content))
         for row in reader:
+            question_type = row.get("Question Type")
             stem = row.get("Question Stem")
             options_raw = row.get("Options")
-            if not stem or not options_raw:
+
+            # Reject rows missing the newly required Question Type
+            if not stem or not options_raw or not question_type:
                 continue
             try:
                 options = json.loads(options_raw) if options_raw.startswith('[') else options_raw.split('|')
             except json.JSONDecodeError:
                 continue
             db_question = models.Question(
+                question_type=question_type,
                 stem=stem,
                 options=options,
                 correct_answer=row.get("Correct Answer"),
@@ -46,14 +51,18 @@ async def upload_questions(
     elif file.filename and file.filename.endswith(".xml"):
         root = ET.fromstring(decoded_content)
         for q_elem in root.findall("Question"):
+            type_elem = q_elem.find("Type")
             stem_elem = q_elem.find("Stem")
             options_elem = q_elem.find("Options")
-            if stem_elem is None or stem_elem.text is None or options_elem is None:
+
+            # Ensure the <Type> tag is present in XML
+            if stem_elem is None or stem_elem.text is None or options_elem is None or type_elem is None or type_elem.text is None:
                 continue
             options = [opt.text for opt in options_elem.findall("Option") if opt.text]
             if not options:
                 continue
             db_question = models.Question(
+                question_type=type_elem.text,
                 stem=stem_elem.text,
                 options=options,
                 correct_answer=q_elem.findtext("CorrectAnswer"),
@@ -76,7 +85,8 @@ def get_questions(
         db: Session = Depends(get_db),
         current_user: models.User = Depends(get_current_user)
 ):
-    questions = db.query(models.Question).offset(skip).limit(limit).all()
+    # Sort the database query by the new created_at timestamp in descending order
+    questions = db.query(models.Question).order_by(models.Question.created_at.desc()).offset(skip).limit(limit).all()
     return questions
 
 
