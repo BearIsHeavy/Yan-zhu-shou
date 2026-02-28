@@ -4,14 +4,14 @@ from sqlalchemy.orm import Session
 
 from .database import engine, Base, get_db, redis_client
 from . import models
-from .routers import auth, users, questions, errors
+from .routers import auth, users, wrong_questions, reviews
 
 # Create tables if they don't exist
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
-    title="Secure Authentication API",
-    description="Scalable API documentation for user authentication and management.",
+    title="Yan-zhu-shou API",
+    description="Backend API for the Smart Error Book application.",
     version="1.1.0"
 )
 
@@ -36,8 +36,7 @@ def health_check(db: Session = Depends(get_db)) -> dict[str, str]:
     return {"status": "healthy", "database": "connected", "redis": redis_status}
 
 # --- INCLUDE ROUTERS ---
-# This is where the magic happens! We plug the modular routers into the main app.
 app.include_router(auth.router)
 app.include_router(users.router)
-app.include_router(questions.router)
-app.include_router(errors.router)
+app.include_router(wrong_questions.router)
+app.include_router(reviews.router)
