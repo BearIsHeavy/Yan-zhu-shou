@@ -1,7 +1,11 @@
 .venv
 .idea
 __pycache__
-test.csv
 .DS_Store
 openapi.json
 docs/*
+
+clear.sql
+example.csv
+example.sql
+TODO.md

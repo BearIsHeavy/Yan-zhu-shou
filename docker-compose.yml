@@ -7,8 +7,8 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: root_password_here
       MYSQL_DATABASE: backend_db
-      MYSQL_USER: api_user
-      MYSQL_PASSWORD: api_password_here
+      MYSQL_USER: api
+      MYSQL_PASSWORD: api
     ports:
       - "3306:3306"
     volumes:
