@@ -5,10 +5,10 @@ from pydantic import BaseModel, Field
 app = FastAPI()
 
 # 简单路由
-# @app.get("/items")
-# async def read_items():
-#     return [{"item_id": 1, "name": "Laptop"},
-#             {"item_id": 2, "name": "phone"} ]
+@app.get("/simple")
+async def read_items():
+    return [{"item_id": 1, "name": "Laptop"},
+            {"item_id": 2, "name": "phone"} ]
 
 @app.post("/items")
 async def create_item():
@@ -85,3 +85,4 @@ class FileResponseModel(BaseModel):
 async def create_file(file: UploadFile = File(...)):
     contents = await file.read()
     return {"filename": file.filename, "size": len(contents)}
+
