@@ -32,7 +32,7 @@ services:
     environment:
       POSTGRES_USER: api
       POSTGRES_PASSWORD: api
-      POSTGRES_DB: backend_db
+      POSTGRES_DB: fastapi_db
     ports:
       - "5432:5432"
     volumes:
