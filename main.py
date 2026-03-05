@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -7,8 +8,6 @@ import models
 import schemas
 from database import engine, get_db, Base
 
-app = FastAPI()
-
 
 # --- 初始化数据库表 (仅用于开发演示，生产请用 Alembic) ---
 async def init_db():
@@ -16,10 +15,15 @@ async def init_db():
         await conn.run_sync(Base.metadata.create_all)
 
 
-# 启动时创建表
-@app.on_event("startup")
-async def on_startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 启动时执行
     await init_db()
+    yield
+    # 关闭时清理（如果需要）
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 # ================= 用户路由 =================
