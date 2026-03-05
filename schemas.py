@@ -28,8 +28,9 @@ class UserResponse(BaseModel):
     id: int
     email: str
     username: str
-    is_activate: bool
+    is_active: bool
     created_at: datetime
     model_config = {"from_attributes": True}
+
     def __repr__(self):
-        return f"<UserResponse=({self.id}, email={self.emial}, username={self.username}, is_activate={self.is_activate})>"
+        return f"<UserResponse=({self.id}, email={self.email}, username={self.username}, is_active={self.is_active})>"
