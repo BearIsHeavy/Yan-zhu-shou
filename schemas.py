@@ -1,46 +1,35 @@
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime
 
-
-# --- User Schemas ---
-class UserBase(BaseModel):
+# Registration
+class UserRegister(BaseModel):
     email: EmailStr
+    username: str = Field(min_length=2, max_length=50)
+    password: str = Field(min_length=6)
+
+    def __repr__(self):
+        return f"<UserRegister={self.email}, username={self.username}, password={self.password})>"
+
+# Login
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+    def __repr__(self):
+        return f"<UserLogin={self.email}, password={self.password}>"
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    def __repr__(self):
+        return f"<Token={self.access_token}, token_type={self.token_type}>"
+
+class UserResponse(BaseModel):
+    id: int
+    email: str
     username: str
-
-
-class UserCreate(UserBase):
-    password: str  # 创建时需要密码
-
-
-class UserUpdate(BaseModel):
-    email: Optional[EmailStr] = None
-    username: Optional[str] = None
-    is_active: Optional[bool] = None
-
-
-class UserResponse(UserBase):
-    id: int
-    is_active: bool
+    is_activate: bool
     created_at: datetime
-
-    # 开启 from_attributes 以支持从 ORM 对象读取数据
     model_config = {"from_attributes": True}
-
-
-# --- Item Schemas ---
-class ItemBase(BaseModel):
-    name: str
-    description: Optional[str] = None
-    price: float
-
-
-class ItemCreate(ItemBase):
-    pass
-
-
-class ItemResponse(ItemBase):
-    id: int
-    owner_id: int
-
-    model_config = {"from_attributes": True}
+    def __repr__(self):
+        return f"<UserResponse=({self.id}, email={self.emial}, username={self.username}, is_activate={self.is_activate})>"

@@ -1,111 +1,186 @@
 from contextlib import asynccontextmanager
+from datetime import timedelta  # 补充缺失的导入
 from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import insert, update, delete
-from typing import List
+from sqlalchemy import insert
+
+# 假设这些模块在当前目录下存在
 import models
 import schemas
 from database import engine, get_db, Base
+from auth import hash_password, verify_password, create_access_token, verify_token
 
 
-# --- 初始化数据库表 (仅用于开发演示，生产请用 Alembic) ---
-async def init_db():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
+# ==================== LIFESPAN EVENT ====================
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 启动时执行
-    await init_db()
-    yield
-    # 关闭时清理（如果需要）
+    """
+    应用启动时初始化数据库表
+    """
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield  # 应用运行期间
+    # 这里可以添加关闭时的清理逻辑（如关闭连接池）
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    lifespan=lifespan,
+    title="Login System Tutorial",
+    description="A simple authentication system using FastAPI, SQLAlchemy (Async), and JWT",
+    version="1.0.0"
+)
+
+# ==================== SECURITY & DEPENDENCIES ====================
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 
-# ================= 用户路由 =================
+async def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db)
+) -> models.User:
+    """
+    依赖项：验证 Token 并获取当前用户
+    """
+    # 1. 验证 Token
+    payload = verify_token(token)
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
 
-@app.post("/users/", response_model=schemas.UserResponse, status_code=status.HTTP_201_CREATED)
-async def create_user(user: schemas.UserCreate, db: AsyncSession = Depends(get_db)):
+    # 2. 从 Token 中获取用户 ID
+    user_id = payload.get("sub")
+    if user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+
+    # 3. 从数据库获取用户
+    result = await db.execute(select(models.User).where(models.User.id == int(user_id)))
+    user = result.scalar_one_or_none()
+
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or inactive",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+
+    return user
+
+
+# ==================== ENDPOINTS ====================
+
+@app.post("/register", response_model=schemas.UserResponse, status_code=status.HTTP_201_CREATED)
+async def register(user_data: schemas.UserRegister, db: AsyncSession = Depends(get_db)):
+    """
+    注册新用户
+    - **email**: 用户邮箱
+    - **username**: 唯一用户名 (3-50 字符)
+    - **password**: 密码 (最少 6 字符)
+    """
     # 1. 检查邮箱是否已存在
-    result = await db.execute(select(models.User).where(models.User.email == user.email))
-    existing_user = result.scalar_one_or_none()
-
-    if existing_user:
+    result = await db.execute(select(models.User).where(models.User.email == user_data.email))
+    if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    # 2. 创建 ORM 对象 (实际项目中密码需要哈希处理，这里简化)
-    # 注意：在 SQLAlchemy 2.0 中，可以直接实例化
+    # 2. 检查用户名是否已存在
+    result = await db.execute(select(models.User).where(models.User.username == user_data.username))
+    if result.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="Username already taken")
+
+    # 3. 创建新用户（密码哈希化）
     db_user = models.User(
-        email=user.email,
-        username=user.username,
-        hashed_password=user.password  # TODO: 请使用 passlib.hash.bcrypt_context.hash(user.password)
+        email=user_data.email,
+        username=user_data.username,
+        hashed_password=hash_password(user_data.password)
     )
 
-    # 3. 添加到会话
+    # 4. 提交到数据库
     db.add(db_user)
-
-    # 4. 提交事务 (flush 可以获取生成的 ID)
     await db.commit()
-    await db.refresh(db_user)  # 刷新以获取服务器生成的默认值 (如 created_at)
+    await db.refresh(db_user)
 
     return db_user
+
+
+@app.post("/login", response_model=schemas.Token)
+async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
+    """
+    登录并获取访问令牌
+    - **username**: 可以是邮箱或用户名
+    - **password**: 用户密码
+    """
+    # 1. 通过邮箱或用户名查找用户
+    result = await db.execute(
+        select(models.User).where(
+            (models.User.email == form_data.username) |
+            (models.User.username == form_data.username)
+        )
+    )
+    user = result.scalar_one_or_none()
+
+    # 2. 验证用户是否存在且密码正确
+    if not user or not verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+
+    # 3. 检查用户是否激活
+    if not user.is_active:
+        raise HTTPException(status_code=400, detail="User account is disabled")
+
+    # 4. 创建 Access Token
+    access_token = create_access_token(
+        data={"sub": str(user.id), "email": user.email},
+        expires_delta=timedelta(minutes=30)
+    )
+
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+@app.get("/me", response_model=schemas.UserResponse)
+async def get_current_user_info(current_user: models.User = Depends(get_current_user)):
+    """
+    获取当前登录用户的信息
+    需要有效的认证令牌
+    """
+    return current_user
 
 
 @app.get("/users/{user_id}", response_model=schemas.UserResponse)
-async def read_user(user_id: int, db: AsyncSession = Depends(get_db)):
-    # 使用 select 查询
+async def get_user(user_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    根据 ID 获取用户信息 (公开接口，仅用于演示)
+    """
     result = await db.execute(select(models.User).where(models.User.id == user_id))
-    db_user = result.scalar_one_or_none()
+    user = result.scalar_one_or_none()
 
-    if not db_user:
+    if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    return db_user
+    return user
 
 
-@app.get("/users/", response_model=List[schemas.UserResponse])
-async def read_users(skip: int = 0, limit: int = 10, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(models.User).offset(skip).limit(limit))
-    users = result.scalars().all()  # scalars() 提取 ORM 对象列表
-    return users
-
-
-# ================= 物品路由 (带关联查询) =================
-
-@app.post("/users/{user_id}/items/", response_model=schemas.ItemResponse)
-async def create_item_for_user(user_id: int, item: schemas.ItemCreate, db: AsyncSession = Depends(get_db)):
-    # 1. 确认用户存在
-    result = await db.execute(select(models.User).where(models.User.id == user_id))
-    db_user = result.scalar_one_or_none()
-    if not db_user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    # 2. 创建物品
-    db_item = models.Item(**item.model_dump(), owner_id=user_id)
-    db.add(db_item)
-    await db.commit()
-    await db.refresh(db_item)
-
-    return db_item
-
-
-@app.get("/users/{user_id}/items", response_model=List[schemas.ItemResponse])
-async def read_user_items(user_id: int, db: AsyncSession = Depends(get_db)):
-    # 方法 A: 先查用户，再访问关系属性 (需要预先加载或懒加载)
-    # 为了性能，通常建议使用 select options 进行 join 加载，这里演示简单写法
-
-    result = await db.execute(select(models.User).where(models.User.id == user_id))
-    db_user = result.scalar_one_or_none()
-    if not db_user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    # 访问关系属性会自动触发新的查询 (懒加载)，或者如果你在 User 模型定义了 options
-    # 更好的方式是直接查 Item 表
-    item_result = await db.execute(select(models.Item).where(models.Item.owner_id == user_id))
-    items = item_result.scalars().all()
-
-    return items
+@app.get("/")
+async def root():
+    """根路径欢迎信息"""
+    return {
+        "message": "Login System Tutorial",
+        "endpoints": {
+            "register": "POST /register",
+            "login": "POST /login",
+            "current_user": "GET /me",
+            "get_user": "GET /users/{user_id}"
+        }
+    }
