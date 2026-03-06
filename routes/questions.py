@@ -62,7 +62,7 @@ async def store_question(
 
     # 检查题干是否超过了256个字符
     try:
-        if get_byte_length(question_data.stem) > 256:
+        if get_byte_length(question_data.stem) > 2:
             stem_text = question_data.stem
             options_json = (
                 json.dumps(question_data.options)
@@ -81,36 +81,16 @@ async def store_question(
             )
             db.add(item)
             await db.flush()
+            print(item.No)
             stem_item = schemas.StemTextItem(
                 question_no=item.No,
                 full_text=stem_text
             )
             await store_stem(db, stem_item)
             await db.commit()
-        return {"No": item.No}
     except Exception as e:
         raise e
+    return True
 
 
-if __name__ == "__main__":
-    question: schemas.QBQuestionCreate = schemas.QBQuestionCreate(
-        bank_id=1,
-        category='english',
-        stem='who is best beautiful woman?',
-        qus_type=1,
-        options={"A": "mother", "B": "B"},
-        correct_ans_summary='B',
-        is_public=True
-    )
 
-
-    def store_question(
-            question: schemas.QBQuestionCreate,
-            db: AsyncSession = Depends(get_db)
-    ):
-        stem_length = len(question.stem)
-        print(stem_length)
-        return "True"
-
-
-    store_question(question)
