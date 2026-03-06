@@ -274,7 +274,13 @@ async def upload_xml_questions(
 
 @router.post("/question", response_model=schemas.QBQuestionResponse)
 async def store_single_question(
-    question_data: schemas.QBQuestionCreate,
+    bank_id: int = Form(...),
+    category: str = Form(...),
+    stem: str = Form(...),
+    qus_type: int = Form(1),
+    options: Optional[str] = Form(None),
+    correct_ans_summary: Optional[str] = Form(None),
+    is_public: bool = Form(True),
     full_text: Optional[str] = Form(None),
     image_url: Optional[str] = Form(None),
     full_answer: Optional[str] = Form(None),
@@ -286,7 +292,12 @@ async def store_single_question(
     Upload a single question to a question bank.
     
     - bank_id: ID of the question bank (must belong to current user)
-    - question_data: Question details (category, stem, qus_type, options, etc.)
+    - category: Subject/topic category
+    - stem: Question stem (summary for list display, max 255 chars)
+    - qus_type: Question type (0:Essay, 1:Single, 2:Multiple, 3:Fill-in)
+    - options: JSON string of options (optional)
+    - correct_ans_summary: Summary of correct answer (optional)
+    - is_public: Whether question is public (default: True)
     - full_text: Optional full stem text for StemText table
     - image_url: Optional image URL for the question
     - full_answer: Optional full answer for AnswerText table
@@ -295,7 +306,7 @@ async def store_single_question(
     result = await db.execute(
         select(models.QuestionBank).where(
             and_(
-                models.QuestionBank.bank_id == question_data.bank_id,
+                models.QuestionBank.bank_id == bank_id,
                 models.QuestionBank.user_id == current_user.user_id
             )
         )
@@ -305,29 +316,23 @@ async def store_single_question(
     if not question_bank:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Question bank {question_data.bank_id} not found or you don't have access."
+            detail=f"Question bank {bank_id} not found or you don't have access."
         )
-    
+
     try:
-        options_json = (
-            json.dumps(question_data.options)
-            if isinstance(question_data.options, dict)
-            else question_data.options
-        )
-        
         item = models.QBQuestion(
-            bank_id=question_data.bank_id,
-            category=question_data.category,
-            stem=question_data.stem[:255],
-            qus_type=question_data.qus_type,
-            options=json.dumps(options_json) if options_json else None,
-            correct_ans_summary=question_data.correct_ans_summary,
-            is_public=question_data.is_public,
+            bank_id=bank_id,
+            category=category,
+            stem=stem[:255],
+            qus_type=qus_type,
+            options=options,
+            correct_ans_summary=correct_ans_summary,
+            is_public=is_public,
             user_id=current_user.user_id
         )
         db.add(item)
         await db.flush()
-        
+
         await store_stem_and_answer(
             db=db,
             question_no=item.No,
@@ -336,12 +341,34 @@ async def store_single_question(
             full_answer=full_answer,
             explanation=explanation
         )
-        
+
         await db.commit()
         await db.refresh(item)
+
+        # Parse options for response
+        response_data = item.__dict__.copy()
+        if item.options and isinstance(item.options, str):
+            try:
+                response_data['options'] = json.loads(item.options)
+            except json.JSONDecodeError:
+                response_data['options'] = {"format": "JSON"}
         
-        return item
-        
+        # Create response manually
+        return schemas.QBQuestionResponse(
+            No=item.No,
+            bank_id=item.bank_id,
+            category=item.category,
+            stem=item.stem,
+            qus_type=item.qus_type,
+            options=response_data['options'],
+            correct_ans_summary=item.correct_ans_summary,
+            is_public=item.is_public,
+            correct_num=item.correct_num,
+            uncorrect_num=item.uncorrect_num,
+            user_id=item.user_id,
+            created_at=item.created_at
+        )
+
     except Exception as e:
         await db.rollback()
         raise HTTPException(
