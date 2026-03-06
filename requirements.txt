@@ -25,3 +25,6 @@ httpx>=0.26.0
 
 # Form data
 python-multipart>=0.0.6
+
+# Redis
+redis>=5.0.0

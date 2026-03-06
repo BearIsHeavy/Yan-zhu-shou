@@ -1,19 +1,4 @@
 services:
-  # MySQL Database Setup
-  mysql:
-    image: mysql:8.0
-    container_name: backend_mysql
-    restart: "no"
-    environment:
-      MYSQL_ROOT_PASSWORD: root_password_here
-      MYSQL_DATABASE: backend_db
-      MYSQL_USER: api
-      MYSQL_PASSWORD: api
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-
   # Redis In-Memory Database Setup
   redis:
     image: redis:7.2-alpine
@@ -40,6 +25,5 @@ services:
 
 # Define persistent storage
 volumes:
-  mysql_data:
   redis_data:
   postgres_data:

@@ -20,28 +20,72 @@ UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 
+STEM_MARKER = "###"  # Marker prefix for stems stored in StemText table
+
+
 def get_byte_length(text: str) -> int:
-    """Get byte length of UTF-8 encoded Text"""
+    """Get byte length of UTF-8 encoded text."""
     return len(text.encode('utf-8'))
+
+
+async def get_full_stem(db: AsyncSession, question: models.QBQuestion) -> str:
+    """
+    Get the full stem text for a question.
+    
+    If the stem field starts with the marker '###', fetches the full text
+    from the StemText table. Otherwise, returns the stem field directly.
+    
+    Args:
+        db: Database session
+        question: QBQuestion object
+        
+    Returns:
+        Full stem text
+    """
+    if question.stem.startswith(STEM_MARKER):
+        # Fetch full stem from StemText table
+        result = await db.execute(
+            select(models.StemText).where(models.StemText.question_no == question.No)
+        )
+        stem_record = result.scalar_one_or_none()
+        if stem_record:
+            return stem_record.full_text
+        # Fallback to stem if no record found (should not happen)
+        return question.stem[len(STEM_MARKER):]
+    return question.stem
 
 
 async def store_stem_and_answer(
     db: AsyncSession,
     question_no: int,
-    full_text: Optional[str] = None,
-    image_url: Optional[str] = None,
+    stem: str,  # The original full stem text
     full_answer: Optional[str] = None,
     explanation: Optional[str] = None
 ):
-    """Store stem text and answer text for a question"""
-    if full_text:
+    """
+    Store stem text and answer text for a question.
+    
+    Only stores stem in StemText table if stem > 255 bytes.
+    When stem exceeds 255 bytes, the stem column in qb_questions 
+    will contain the marker '###' to indicate external storage.
+    
+    Args:
+        db: Database session
+        question_no: Question number/ID
+        stem: Full stem text
+        full_answer: Optional full answer text for AnswerText table
+        explanation: Optional answer explanation
+    """
+    stem_byte_length = get_byte_length(stem)
+    
+    # Only store in StemText if stem exceeds 255 bytes
+    if stem_byte_length > 255:
         stem_record = models.StemText(
             question_no=question_no,
-            full_text=full_text,
-            image_url=image_url
+            full_text=stem
         )
         db.add(stem_record)
-    
+
     if full_answer:
         answer_record = models.AnswerText(
             question_no=question_no,
@@ -112,10 +156,16 @@ async def upload_csv_questions(
                         options = {"format": "JSON"}
                 
                 qus_type = int(row.get("qus_type", 1))
+                full_stem = row.get("stem", "")
+                stem_byte_length = get_byte_length(full_stem)
+                
+                # If stem > 255 bytes, store marker in stem column, otherwise store the stem
+                stem_value = STEM_MARKER if stem_byte_length > 255 else full_stem[:255]
+                
                 item = models.QBQuestion(
                     bank_id=bank_id,
                     category=row.get("category", "General"),
-                    stem=row.get("stem", "")[:255],
+                    stem=stem_value,
                     qus_type=qus_type,
                     options=json.dumps(options) if options else None,
                     correct_ans_summary=row.get("correct_ans_summary"),
@@ -124,15 +174,25 @@ async def upload_csv_questions(
                 )
                 db.add(item)
                 await db.flush()
-                
-                await store_stem_and_answer(
-                    db=db,
-                    question_no=item.No,
-                    full_text=row.get("full_text"),
-                    image_url=row.get("image_url"),
-                    full_answer=row.get("full_answer"),
-                    explanation=row.get("explanation")
-                )
+
+                # Store full stem in StemText only if it exceeds 255 bytes
+                if stem_byte_length > 255:
+                    await store_stem_and_answer(
+                        db=db,
+                        question_no=item.No,
+                        stem=full_stem,
+                        full_answer=row.get("full_answer"),
+                        explanation=row.get("explanation")
+                    )
+                elif row.get("full_answer") or row.get("explanation"):
+                    # Still store answer/explanation if provided (even without full stem)
+                    await store_stem_and_answer(
+                        db=db,
+                        question_no=item.No,
+                        stem=full_stem,
+                        full_answer=row.get("full_answer"),
+                        explanation=row.get("explanation")
+                    )
                 questions_added += 1
         
         await db.commit()
@@ -223,12 +283,17 @@ async def upload_xml_questions(
             
             qus_type_str = get_elem_text("qus_type")
             qus_type = int(qus_type_str) if qus_type_str else 1
+
+            full_stem = get_elem_text("stem")
+            stem_byte_length = get_byte_length(full_stem)
             
-            stem = get_elem_text("stem")
+            # If stem > 255 bytes, store marker in stem column, otherwise store the stem
+            stem_value = STEM_MARKER if stem_byte_length > 255 else full_stem[:255]
+            
             item = models.QBQuestion(
                 bank_id=bank_id,
                 category=get_elem_text("category") or "General",
-                stem=stem[:255],
+                stem=stem_value,
                 qus_type=qus_type,
                 options=json.dumps(options) if options else None,
                 correct_ans_summary=get_elem_text("correct_ans_summary"),
@@ -237,15 +302,25 @@ async def upload_xml_questions(
             )
             db.add(item)
             await db.flush()
-            
-            await store_stem_and_answer(
-                db=db,
-                question_no=item.No,
-                full_text=get_elem_text("full_text"),
-                image_url=get_elem_text("image_url"),
-                full_answer=get_elem_text("full_answer"),
-                explanation=get_elem_text("explanation")
-            )
+
+            # Store full stem in StemText only if it exceeds 255 bytes
+            if stem_byte_length > 255:
+                await store_stem_and_answer(
+                    db=db,
+                    question_no=item.No,
+                    stem=full_stem,
+                    full_answer=get_elem_text("full_answer"),
+                    explanation=get_elem_text("explanation")
+                )
+            elif get_elem_text("full_answer") or get_elem_text("explanation"):
+                # Still store answer/explanation if provided (even without full stem)
+                await store_stem_and_answer(
+                    db=db,
+                    question_no=item.No,
+                    stem=full_stem,
+                    full_answer=get_elem_text("full_answer"),
+                    explanation=get_elem_text("explanation")
+                )
             questions_added += 1
         
         await db.commit()
@@ -281,8 +356,6 @@ async def store_single_question(
     options: Optional[str] = Form(None),
     correct_ans_summary: Optional[str] = Form(None),
     is_public: bool = Form(True),
-    full_text: Optional[str] = Form(None),
-    image_url: Optional[str] = Form(None),
     full_answer: Optional[str] = Form(None),
     explanation: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
@@ -290,18 +363,19 @@ async def store_single_question(
 ):
     """
     Upload a single question to a question bank.
-    
+
     - bank_id: ID of the question bank (must belong to current user)
     - category: Subject/topic category
-    - stem: Question stem (summary for list display, max 255 chars)
+    - stem: Question stem (if <= 255 bytes) or '###' marker if stored externally
     - qus_type: Question type (0:Essay, 1:Single, 2:Multiple, 3:Fill-in)
     - options: JSON string of options (optional)
     - correct_ans_summary: Summary of correct answer (optional)
     - is_public: Whether question is public (default: True)
-    - full_text: Optional full stem text for StemText table
-    - image_url: Optional image URL for the question
     - full_answer: Optional full answer for AnswerText table
     - explanation: Optional answer explanation
+    
+    Note: If stem exceeds 255 bytes, it will be stored in StemText table
+    and the stem field will contain '###' marker.
     """
     result = await db.execute(
         select(models.QuestionBank).where(
@@ -320,10 +394,13 @@ async def store_single_question(
         )
 
     try:
+        stem_byte_length = get_byte_length(stem)
+        stem_value = STEM_MARKER if stem_byte_length > 255 else stem[:255]
+        
         item = models.QBQuestion(
             bank_id=bank_id,
             category=category,
-            stem=stem[:255],
+            stem=stem_value,
             qus_type=qus_type,
             options=options,
             correct_ans_summary=correct_ans_summary,
@@ -333,14 +410,24 @@ async def store_single_question(
         db.add(item)
         await db.flush()
 
-        await store_stem_and_answer(
-            db=db,
-            question_no=item.No,
-            full_text=full_text,
-            image_url=image_url,
-            full_answer=full_answer,
-            explanation=explanation
-        )
+        # Store full stem in StemText only if it exceeds 255 bytes
+        if stem_byte_length > 255:
+            await store_stem_and_answer(
+                db=db,
+                question_no=item.No,
+                stem=stem,
+                full_answer=full_answer,
+                explanation=explanation
+            )
+        elif full_answer or explanation:
+            # Still store answer/explanation if provided (even without full stem)
+            await store_stem_and_answer(
+                db=db,
+                question_no=item.No,
+                stem=stem,
+                full_answer=full_answer,
+                explanation=explanation
+            )
 
         await db.commit()
         await db.refresh(item)

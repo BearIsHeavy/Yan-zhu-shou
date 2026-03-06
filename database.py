@@ -2,14 +2,25 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import declarative_base
 import os
 from dotenv import load_dotenv
+import redis.asyncio as redis
 
 load_dotenv()
 
 # Database URL
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://api:api@localhost:5432/fastapi_db")
 
+# Redis URL
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
 # Create Async engine
 engine = create_async_engine(DATABASE_URL, echo=True)
+
+# Redis client initialization
+redis_client = redis.from_url(
+    REDIS_URL,
+    encoding="utf-8",
+    decode_responses=True
+)
 
 # Base class for models
 AsyncSessionLocal = async_sessionmaker(
@@ -31,3 +42,12 @@ async def get_db():
             raise
         finally:
             await session.close()
+
+
+# Dependency: Get Redis client
+async def get_redis():
+    """Get Redis client instance."""
+    try:
+        yield redis_client
+    finally:
+        pass  # Don't close the client, it's shared

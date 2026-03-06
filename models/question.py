@@ -55,7 +55,6 @@ class StemText(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     question_no = Column(Integer, ForeignKey("qb_questions.No", ondelete="CASCADE"), unique=True, nullable=False)
     full_text = Column(Text, nullable=False)
-    image_url = Column(String(255))
 
     question = relationship("QBQuestion", back_populates="stem_text")
 
