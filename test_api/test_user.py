@@ -13,7 +13,7 @@ import random
 import string
 
 # Base URL for the API
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = "http://127.0.0.1:8000/users"
 
 
 def generate_random_email() -> str:
@@ -164,14 +164,14 @@ class TestUserAPIs:
 
     def test_get_current_user(self) -> dict:
         """
-        Test GET /users/me endpoint.
+        Test GET /me endpoint.
         Gets current user info using access token.
         """
         print("\n" + "=" * 60)
-        print("TEST: GET /users/me - Get current user info")
+        print("TEST: GET /me - Get current user info")
         print("=" * 60)
 
-        url = f"{BASE_URL}/users/me"
+        url = f"{BASE_URL}/me"
         headers = {"Authorization": f"Bearer {self.access_token}"}
 
         print(f"Request URL: {url}")
@@ -192,14 +192,14 @@ class TestUserAPIs:
 
     def test_update_current_user(self) -> dict:
         """
-        Test PUT /users/me endpoint.
+        Test PUT /me endpoint.
         Updates current user information.
         """
         print("\n" + "=" * 60)
-        print("TEST: PUT /users/me - Update current user info")
+        print("TEST: PUT /me - Update current user info")
         print("=" * 60)
 
-        url = f"{BASE_URL}/users/me"
+        url = f"{BASE_URL}/me"
         headers = {"Authorization": f"Bearer {self.access_token}"}
         payload = {
             "name": "UpdatedName",
@@ -227,14 +227,14 @@ class TestUserAPIs:
 
     def test_get_current_user_no_auth(self) -> None:
         """
-        Test GET /users/me without authentication.
+        Test GET /me without authentication.
         Should return 401 Unauthorized.
         """
         print("\n" + "=" * 60)
-        print("TEST: GET /users/me - Without authentication")
+        print("TEST: GET /me - Without authentication")
         print("=" * 60)
 
-        url = f"{BASE_URL}/users/me"
+        url = f"{BASE_URL}/me"
 
         print(f"Request URL: {url}")
         print("Headers: (none)")
