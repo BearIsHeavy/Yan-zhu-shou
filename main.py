@@ -6,5 +6,5 @@ app = FastAPI()
 
 # app.include_router(users.router, prefix="/users", tags=["User"])
 # app.include_router(question_banks.router, prefix="/question_banks", tags=["QuestionBank"])
-app.include_router(questions.router, prefix="/question_banks", tags=["QuestionBank"])
+app.include_router(questions.router, prefix="/upload", tags=["QuestionBank"])
 # ==================== QuestionBank Endpoints ====================
