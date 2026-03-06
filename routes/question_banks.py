@@ -8,13 +8,15 @@ from sqlalchemy import select
 import models
 import schemas
 from database import get_db
+from dependencies import get_current_user
 
 router = APIRouter()
 
 @router.post("/book", response_model=schemas.QuestionBankResponse)
 async def post_question(
     infor: schemas.QuestionBankCreate,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
 ):
     """store book information"""
     try:
@@ -32,7 +34,7 @@ async def post_question(
     # store this book information to database
     book_infor = models.QuestionBank(
         **infor.model_dump(),
-        user_id=1
+        user_id=current_user.user_id
     )
     db.add(book_infor)
     await db.flush()

@@ -17,7 +17,7 @@ class User(Base):
 
     # Relationships
     question_banks = relationship("QuestionBank", back_populates="user", cascade="all, delete-orphan")
-    security_logs = relationship("SecurityLog", back_populates="user", cascade="all, delete-orphan")
+    security_logs  = relationship("SecurityLog", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<User(user_id={self.user_id}, name={self.name})>"

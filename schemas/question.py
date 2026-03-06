@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 
 
@@ -26,6 +26,26 @@ class QuestionBankResponse(QuestionBankBase):
     user_id: int
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
+
+
+# ==================== CSV/XML Question Import Schemas ====================
+
+class QuestionImportItem(BaseModel):
+    """Schema for importing a single question from CSV/XML"""
+    category: str = Field(min_length=1, max_length=50)
+    stem: str = Field(min_length=1)
+    qus_type: int = Field(default=1, ge=0, le=3)
+    options: Optional[Dict[str, Any]] = None
+    correct_ans_summary: Optional[str] = None
+    full_text: Optional[str] = None  # Full stem text for StemText
+    image_url: Optional[str] = None
+    full_answer: Optional[str] = None
+    explanation: Optional[str] = None
+
+
+class QuestionImportBatch(BaseModel):
+    """Schema for batch question import"""
+    questions: List[QuestionImportItem]
 
 
 # ==================== QBQuestion Schemas ====================
