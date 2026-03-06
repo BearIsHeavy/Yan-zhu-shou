@@ -1,0 +1,46 @@
+# Virtual environment
+.venv
+venv
+.env
+
+# Python cache
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Documentation
+docs/*
+README.md
+
+# Test files
+test_api/
+
+# Build artifacts
+*.egg-info
+.eggs
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Uploads (will be created at runtime if needed)
+uploads/
+
+# Environment file (create .env.docker for container-specific settings)
+.env
