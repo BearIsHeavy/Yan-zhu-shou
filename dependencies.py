@@ -37,13 +37,7 @@ async def get_current_user(
     cache_key = f"user:{email}"
     cached_user = await redis.get(cache_key)
     
-    if cached_user:
-        # Deserialize cached user data and return
-        user_data = json.loads(cached_user)
-        # Reconstruct user object from cached data
-        return models.User(**user_data)
-    
-    # Query database if not in cache
+    # Query database (always use DB to get session-bound object)
     result = await db.execute(select(models.User).where(models.User.email == email))
     user = result.scalar_one_or_none()
     
@@ -53,17 +47,22 @@ async def get_current_user(
             detail="User not found",
         )
     
-    # Cache the user data with TTL
-    cache_ttl = int(os.getenv("REDIS_CACHE_TTL", 300))
-    user_dict = {
-        "user_id": user.user_id,
-        "email": user.email,
-        "name": user.name,
-        "hash_password": user.hash_password,
-        "phone": user.phone,
-        "gender": user.gender,
-        "created_at": user.created_at.isoformat() if user.created_at else None
-    }
-    await redis.setex(cache_key, cache_ttl, json.dumps(user_dict))
-    
+    # Cache the user data with TTL (if not already cached)
+    if not cached_user:
+        cache_ttl = int(os.getenv("REDIS_CACHE_TTL", 300))
+        try:
+            user_dict = {
+                "user_id": user.user_id,
+                "email": user.email,
+                "name": user.name,
+                "hash_password": user.hash_password,
+                "phone": user.phone,
+                "gender": user.gender,
+                "created_at": str(user.created_at) if user.created_at else None
+            }
+            await redis.setex(cache_key, cache_ttl, json.dumps(user_dict))
+        except Exception as e:
+            # Log error but don't fail the request if Redis fails
+            print(f"Warning: Failed to cache user data: {e}")
+
     return user

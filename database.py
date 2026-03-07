@@ -45,9 +45,6 @@ async def get_db():
 
 
 # Dependency: Get Redis client
-async def get_redis():
+async def get_redis() -> redis.Redis:
     """Get Redis client instance."""
-    try:
-        yield redis_client
-    finally:
-        pass  # Don't close the client, it's shared
+    return redis_client

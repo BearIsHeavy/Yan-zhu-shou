@@ -1,11 +1,13 @@
 """
 Test script for Question Bank and Question Upload APIs.
 Tests question bank creation, CSV/XML upload, and single question upload.
+Includes tests for stem storage logic (>255 bytes stored in StemText table).
 
 Usage:
     python test_api/test_question_apis.py
 
 Note: Make sure the FastAPI server is running on http://127.0.0.1:8000
+      and Redis server is running on localhost:6379
 """
 
 import httpx
@@ -383,6 +385,135 @@ English,"Choose the correct spelling",1,"{""A"": ""recieve"", ""B"": ""receive""
         else:
             print("✓ Created with unique name (no conflict)")
 
+    def test_stem_storage_short_stem(self) -> dict:
+        """
+        Test POST /upload/question - Short stem (<=255 bytes) stored directly.
+        """
+        print("\n" + "=" * 60)
+        print("TEST: Stem Storage - Short stem (<=255 bytes)")
+        print("=" * 60)
+
+        if not self.question_bank_id:
+            raise RuntimeError("Question bank ID not set.")
+
+        url = f"{UPLOAD_URL}/question"
+        headers = {"Authorization": f"Bearer {self.access_token}"}
+
+        # Short stem (less than 255 bytes)
+        short_stem = "What is 2+2?"
+        print(f"Stem length: {len(short_stem.encode('utf-8'))} bytes")
+        
+        form_data = {
+            'bank_id': str(self.question_bank_id),
+            'category': 'Math',
+            'stem': short_stem,
+            'qus_type': '1',
+            'options': json.dumps({"A": "3", "B": "4", "C": "5"}),
+            'correct_ans_summary': 'B',
+            'is_public': 'false'
+        }
+
+        response = self.client.post(url, headers=headers, data=form_data)
+        print(f"Response Status Code: {response.status_code}")
+        print(f"Response Body: {response.json()}")
+
+        assert response.status_code == 200
+        result = response.json()
+        # Stem should be stored directly, not the marker
+        assert result["stem"] == short_stem
+        assert not result["stem"].startswith("###")
+        
+        print("✓ Short stem stored directly (no '###' marker)")
+        return result
+
+    def test_stem_storage_long_stem(self) -> dict:
+        """
+        Test POST /upload/question - Long stem (>255 bytes) stored in StemText table.
+        """
+        print("\n" + "=" * 60)
+        print("TEST: Stem Storage - Long stem (>255 bytes)")
+        print("=" * 60)
+
+        if not self.question_bank_id:
+            raise RuntimeError("Question bank ID not set.")
+
+        url = f"{UPLOAD_URL}/question"
+        headers = {"Authorization": f"Bearer {self.access_token}"}
+
+        # Long stem (more than 255 bytes)
+        long_stem = "This is a very long question stem. " + "A" * 300
+        stem_bytes = len(long_stem.encode('utf-8'))
+        print(f"Stem length: {stem_bytes} bytes (should be > 255)")
+        
+        assert stem_bytes > 255, "Test stem should be longer than 255 bytes"
+
+        form_data = {
+            'bank_id': str(self.question_bank_id),
+            'category': 'General',
+            'stem': long_stem,
+            'qus_type': '1',
+            'options': json.dumps({"A": "Option A", "B": "Option B"}),
+            'correct_ans_summary': 'A',
+            'is_public': 'false',
+            'full_answer': 'The correct answer is A',
+            'explanation': 'This is a detailed explanation.'
+        }
+
+        response = self.client.post(url, headers=headers, data=form_data)
+        print(f"Response Status Code: {response.status_code}")
+        print(f"Response Body: {response.json()}")
+
+        assert response.status_code == 200
+        result = response.json()
+        # Stem should be the marker '###' since it's stored in StemText table
+        assert result["stem"] == "###", f"Expected '###' marker, got: {result['stem']}"
+        
+        print(f"✓ Long stem stored in StemText table (marker '###' used)")
+        return result
+
+    def test_stem_storage_csv_upload(self) -> dict:
+        """
+        Test CSV upload with mixed stem lengths.
+        """
+        print("\n" + "=" * 60)
+        print("TEST: Stem Storage - CSV upload with mixed stem lengths")
+        print("=" * 60)
+
+        if not self.question_bank_id:
+            raise RuntimeError("Question bank ID not set.")
+
+        # Create CSV with short and long stems
+        long_text = "X" * 300  # Make stem > 255 bytes
+        csv_content = f"""category,stem,qus_type,options,correct_ans_summary,full_answer,explanation
+Math,"What is 2+2?",1,"{{""A"": ""3"", ""B"": ""4""}}","B","4","Basic math"
+Science,"This is a very long question stem that exceeds 255 bytes. {long_text}",1,"{{""A"": ""A"", ""B"": ""B""}}","A","Answer","Explanation"
+"""
+        temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False)
+        temp_file.write(csv_content)
+        temp_file.close()
+
+        try:
+            url = f"{UPLOAD_URL}/csv"
+            headers = {"Authorization": f"Bearer {self.access_token}"}
+
+            with open(temp_file.name, 'rb') as f:
+                files = {'file': ('test_stems.csv', f, 'text/csv')}
+                data = {'bank_id': self.question_bank_id}
+
+                response = self.client.post(url, headers=headers, files=files, data=data)
+
+                print(f"Response Status Code: {response.status_code}")
+                print(f"Response Body: {response.json()}")
+
+                assert response.status_code == 200
+                result = response.json()
+                assert result["questions_added"] == 2
+
+                print(f"✓ CSV upload with mixed stem lengths successful")
+                return result
+        finally:
+            os.unlink(temp_file.name)
+
     def cleanup(self):
         """Close the HTTP client."""
         self.client.close()
@@ -410,6 +541,11 @@ English,"Choose the correct spelling",1,"{""A"": ""recieve"", ""B"": ""receive""
 
             # Test single question upload
             self.test_upload_single_question()
+
+            # Test stem storage logic
+            self.test_stem_storage_short_stem()
+            self.test_stem_storage_long_stem()
+            self.test_stem_storage_csv_upload()
 
             # Test error cases
             self.test_upload_to_nonexistent_bank()

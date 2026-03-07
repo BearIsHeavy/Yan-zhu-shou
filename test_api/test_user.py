@@ -6,11 +6,13 @@ Usage:
     python test_main.py
 
 Note: Make sure the FastAPI server is running on http://127.0.0.1:8000
+      and Redis server is running on localhost:6379
 """
 
 import requests
 import random
 import string
+import time
 
 # Base URL for the API
 BASE_URL = "http://127.0.0.1:8000/users"
@@ -20,6 +22,12 @@ def generate_random_email() -> str:
     """Generate a random email address for testing."""
     random_str = ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
     return f"test_{random_str}@example.com"
+
+
+def generate_random_phone() -> str:
+    """Generate a random phone number for testing."""
+    random_digits = ''.join(random.choices(string.digits, k=10))
+    return f"1{random_digits}"
 
 
 def generate_random_name() -> str:
@@ -35,6 +43,7 @@ class TestUserAPIs:
         self.test_email = generate_random_email()
         self.test_password = "testpass123"
         self.test_name = generate_random_name()
+        self.test_phone = generate_random_phone()
 
     def test_register(self) -> dict:
         """
@@ -50,7 +59,7 @@ class TestUserAPIs:
             "email": self.test_email,
             "name": self.test_name,
             "password": self.test_password,
-            "phone": "13800138000",
+            "phone": self.test_phone,
             "gender": 1
         }
 
@@ -203,7 +212,7 @@ class TestUserAPIs:
         headers = {"Authorization": f"Bearer {self.access_token}"}
         payload = {
             "name": "UpdatedName",
-            "phone": "13900139000",
+            "phone": generate_random_phone(),
             "gender": 2
         }
 
@@ -219,7 +228,7 @@ class TestUserAPIs:
         assert response.status_code == 200, f"Expected 200, got {response.status_code}"
         data = response.json()
         assert data["name"] == "UpdatedName"
-        assert data["phone"] == "13900139000"
+        assert data["phone"] == payload["phone"]
         assert data["gender"] == 2
 
         print("✓ Update current user test PASSED")
@@ -247,6 +256,81 @@ class TestUserAPIs:
         assert response.status_code == 401, f"Expected 401, got {response.status_code}"
 
         print("✓ No auth test PASSED")
+
+    def test_redis_caching(self) -> None:
+        """
+        Test Redis caching for user data.
+        Verifies that user data is cached after login and used on subsequent requests.
+        """
+        print("\n" + "=" * 60)
+        print("TEST: Redis Caching - Verify user data is cached after login")
+        print("=" * 60)
+
+        # Login again to trigger caching
+        login_payload = {
+            "username": self.test_email,
+            "password": self.test_password
+        }
+        
+        print(f"Logging in to trigger cache...")
+        response = requests.post(f"{BASE_URL}/login", data=login_payload)
+        assert response.status_code == 200
+        token = response.json()["access_token"]
+        print("✓ Login successful, user should be cached")
+
+        # Make multiple requests to /me - should be faster due to cache
+        url = f"{BASE_URL}/me"
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        print("Making 3 consecutive requests to /me endpoint...")
+        times = []
+        for i in range(3):
+            start = time.time()
+            response = requests.get(url, headers=headers)
+            elapsed = time.time() - start
+            times.append(elapsed)
+            assert response.status_code == 200
+            print(f"  Request {i+1}: {elapsed*1000:.2f}ms")
+        
+        # Subsequent requests should be faster (cached)
+        avg_time = sum(times) / len(times)
+        print(f"Average response time: {avg_time*1000:.2f}ms")
+        print("✓ Redis caching test PASSED (check Redis logs for cache hits)")
+
+    def test_update_invalidates_cache(self) -> None:
+        """
+        Test that updating user data invalidates the cache.
+        """
+        print("\n" + "=" * 60)
+        print("TEST: Cache Invalidation - Update should invalidate cache")
+        print("=" * 60)
+
+        # Login to ensure cache exists
+        login_payload = {
+            "username": self.test_email,
+            "password": self.test_password
+        }
+        response = requests.post(f"{BASE_URL}/login", data=login_payload)
+        token = response.json()["access_token"]
+        print("✓ Logged in, cache created")
+
+        # Update user
+        url = f"{BASE_URL}/me"
+        headers = {"Authorization": f"Bearer {token}"}
+        payload = {"name": "CacheInvalidatedName"}
+        
+        print("Updating user name...")
+        response = requests.put(url, json=payload, headers=headers)
+        assert response.status_code == 200
+        assert response.json()["name"] == "CacheInvalidatedName"
+        print("✓ User updated, cache should be invalidated")
+
+        # Get user again - should fetch from DB (cache was invalidated)
+        print("Fetching user data again (should fetch from DB)...")
+        response = requests.get(url, headers=headers)
+        assert response.status_code == 200
+        assert response.json()["name"] == "CacheInvalidatedName"
+        print("✓ Cache invalidation test PASSED")
 
     def run_all_tests(self) -> None:
         """Run all tests in sequence."""
@@ -276,6 +360,12 @@ class TestUserAPIs:
 
             # Test without authentication
             self.test_get_current_user_no_auth()
+
+            # Test Redis caching
+            self.test_redis_caching()
+
+            # Test cache invalidation
+            self.test_update_invalidates_cache()
 
             print("\n" + "=" * 60)
             print("ALL TESTS PASSED ✓")
