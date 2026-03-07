@@ -504,9 +504,9 @@ async def batch_update_wrong_questions(
 ):
     """
     Batch update multiple wrong questions.
-    
+
     Currently supports batch marking questions as mastered/not mastered.
-    
+
     - **question_log_ids**: List of user_question_logs IDs to update
     - **is_mastered**: New mastered status for all specified questions
     """
@@ -521,7 +521,238 @@ async def batch_update_wrong_questions(
         )
         .values(is_mastered=update_data.is_mastered)
     )
-    
+
     await db.commit()
-    
+
     return None
+
+
+# ==========================================
+# ANSWER SUBMISSION ENDPOINTS
+# ==========================================
+
+@router.post(
+    "/practice/submit-answer",
+    response_model=schemas.AnswerSubmitResponse,
+    summary="Submit answer for a question"
+)
+async def submit_answer(
+    answer_data: schemas.AnswerSubmitRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Submit an answer for a practice question.
+    
+    This endpoint:
+    1. Retrieves the question from qb_questions
+    2. Compares user's answer with correct_ans_summary
+    3. Saves the result to user_question_logs
+    4. Returns whether the answer was correct
+    
+    For testing purposes, all questions are treated as multiple choice.
+    The correct answer comparison is case-insensitive.
+    """
+    # Get the question
+    result = await db.execute(
+        select(models.QBQuestion).where(
+            models.QBQuestion.No == answer_data.question_no
+        )
+    )
+    question = result.scalar_one_or_none()
+    
+    if not question:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Question {answer_data.question_no} not found."
+        )
+    
+    # Get correct answer
+    correct_answer = question.correct_ans_summary or ""
+    
+    # Compare answers (case-insensitive for multiple choice)
+    # For testing, we treat all as multiple choice
+    is_correct = correct_answer.strip().upper() == answer_data.user_answer.strip().upper()
+    
+    # Check if this is the first time getting this question wrong
+    is_first_wrong = False
+    if not is_correct:
+        # Check previous attempts
+        previous_wrong = await db.execute(
+            select(func.count()).where(
+                and_(
+                    models.UserQuestionLog.user_id == current_user.user_id,
+                    models.UserQuestionLog.question_no == answer_data.question_no,
+                    models.UserQuestionLog.is_correct == False
+                )
+            )
+        )
+        wrong_count = previous_wrong.scalar() or 0
+        is_first_wrong = (wrong_count == 0)
+    
+    # Save to user_question_logs
+    log = models.UserQuestionLog(
+        user_id=current_user.user_id,
+        question_no=answer_data.question_no,
+        user_answer=answer_data.user_answer,
+        is_correct=is_correct
+    )
+    
+    db.add(log)
+    await db.flush()
+    await db.refresh(log)
+    
+    # Get explanation if available
+    explanation = None
+    answer_text_result = await db.execute(
+        select(models.AnswerText).where(
+            models.AnswerText.question_no == answer_data.question_no
+        )
+    )
+    answer_text = answer_text_result.scalar_one_or_none()
+    if answer_text and answer_text.explanation:
+        explanation = answer_text.explanation
+    
+    return schemas.AnswerSubmitResponse(
+        is_correct=is_correct,
+        question_no=answer_data.question_no,
+        correct_answer=correct_answer,
+        user_answer=answer_data.user_answer,
+        explanation=explanation,
+        log_id=log.id,
+        is_first_wrong=is_first_wrong
+    )
+
+
+@router.post(
+    "/practice/start-session",
+    response_model=schemas.PracticeSessionResponse,
+    summary="Start a practice session"
+)
+async def start_practice_session(
+    session_data: schemas.PracticeSessionCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Start a practice session by retrieving questions from a question bank.
+    
+    Returns a set of questions for the user to answer.
+    Only retrieves questions that are multiple choice (qus_type = 1) for testing.
+    
+    - **bank_id**: Question bank ID to practice from
+    - **question_count**: Number of questions to retrieve (1-50)
+    - **category**: Optional category filter
+    """
+    # Verify question bank exists and user has access
+    bank_result = await db.execute(
+        select(models.QuestionBank).where(
+            and_(
+                models.QuestionBank.bank_id == session_data.bank_id,
+                models.QuestionBank.user_id == current_user.user_id
+            )
+        )
+    )
+    question_bank = bank_result.scalar_one_or_none()
+    
+    if not question_bank:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Question bank {session_data.bank_id} not found or you don't have access."
+        )
+    
+    # Build query for questions
+    query = select(models.QBQuestion).where(
+        and_(
+            models.QBQuestion.bank_id == session_data.bank_id,
+            models.QBQuestion.qus_type == 1  # Only single choice for testing
+        )
+    )
+    
+    # Apply category filter if provided
+    if session_data.category:
+        query = query.where(models.QBQuestion.category == session_data.category)
+    
+    # Apply limit
+    query = query.limit(session_data.question_count)
+    
+    # Execute query
+    result = await db.execute(query)
+    questions = result.scalars().all()
+    
+    # Format questions for response (hide correct answers)
+    practice_questions = []
+    for q in questions:
+        # Parse options
+        options = None
+        if q.options:
+            try:
+                import json
+                options = json.loads(q.options)
+            except (json.JSONDecodeError, TypeError):
+                options = None
+        
+        practice_questions.append(
+            schemas.PracticeQuestion(
+                question_no=q.No,
+                category=q.category,
+                stem=q.stem,
+                question_type="single_choice",
+                options=options,
+                difficulty_level=3  # Default difficulty
+            )
+        )
+    
+    return schemas.PracticeSessionResponse(
+        bank_id=session_data.bank_id,
+        bank_name=question_bank.name,
+        questions=practice_questions,
+        total_questions=len(practice_questions)
+    )
+
+
+@router.get(
+    "/practice/question/{question_no}",
+    response_model=schemas.PracticeQuestion,
+    summary="Get a single question for practice"
+)
+async def get_practice_question(
+    question_no: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Get a single question for practice (without revealing the answer).
+    
+    This is useful for loading individual questions on demand.
+    """
+    result = await db.execute(
+        select(models.QBQuestion).where(
+            models.QBQuestion.No == question_no
+        )
+    )
+    question = result.scalar_one_or_none()
+    
+    if not question:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Question {question_no} not found."
+        )
+    
+    # Parse options
+    options = None
+    if question.options:
+        try:
+            import json
+            options = json.loads(question.options)
+        except (json.JSONDecodeError, TypeError):
+            options = None
+    
+    return schemas.PracticeQuestion(
+        question_no=question.No,
+        category=question.category,
+        stem=question.stem,
+        question_type="single_choice",
+        options=options,
+        difficulty_level=3
+    )

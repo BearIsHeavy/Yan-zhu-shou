@@ -139,7 +139,7 @@ class WrongQuestionBatchUpdate(BaseModel):
 class MistakeNotebookStats(BaseModel):
     """
     Statistics for the mistake notebook.
-    
+
     Provides overview of wrong questions by status and category.
     """
     total_wrong: int = Field(..., description="Total wrong questions")
@@ -147,3 +147,83 @@ class MistakeNotebookStats(BaseModel):
     reviewing_count: int = Field(..., description="Questions with 'reviewing' status")
     mastered_count: int = Field(..., description="Questions marked as mastered")
     by_category: dict = Field(default_factory=dict, description="Count by category")
+
+
+# ==========================================
+# ANSWER SUBMISSION SCHEMAS
+# ==========================================
+
+class AnswerSubmitRequest(BaseModel):
+    """
+    Request schema for submitting an answer to a question.
+    
+    Used by the practice/exercise feature to record user answers.
+    """
+    question_no: int = Field(..., gt=0, description="Question ID from qb_questions table")
+    user_answer: str = Field(..., min_length=1, max_length=500, description="User's answer (option letter for multiple choice)")
+    time_spent_seconds: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Time spent answering in seconds"
+    )
+
+
+class AnswerSubmitResponse(BaseModel):
+    """
+    Response schema after submitting an answer.
+    
+    Returns whether the answer was correct and related statistics.
+    """
+    is_correct: bool = Field(..., description="Whether the answer was correct")
+    question_no: int = Field(..., description="Question ID")
+    correct_answer: str = Field(..., description="Correct answer")
+    user_answer: str = Field(..., description="User's submitted answer")
+    explanation: Optional[str] = Field(None, description="Answer explanation if available")
+    log_id: int = Field(..., description="Created user_question_logs ID")
+    is_first_wrong: bool = Field(..., description="True if this is first time getting it wrong")
+
+
+class PracticeSessionCreate(BaseModel):
+    """
+    Request schema for starting a practice session.
+    
+    Returns a set of questions for the user to answer.
+    """
+    bank_id: int = Field(..., gt=0, description="Question bank ID to practice from")
+    question_count: int = Field(
+        default=10,
+        ge=1,
+        le=50,
+        description="Number of questions to retrieve"
+    )
+    category: Optional[str] = Field(
+        default=None,
+        max_length=50,
+        description="Filter by category/subject"
+    )
+
+
+class PracticeQuestion(BaseModel):
+    """
+    Question data for practice mode.
+    
+    Includes question details but hides the correct answer.
+    """
+    question_no: int = Field(..., description="Question ID")
+    category: str = Field(..., description="Subject/category")
+    stem: str = Field(..., description="Question stem/text")
+    question_type: str = Field(..., description="Type of question")
+    options: Optional[dict] = Field(None, description="Answer options")
+    difficulty_level: int = Field(default=1, description="Difficulty 1-5")
+
+
+class PracticeSessionResponse(BaseModel):
+    """
+    Response schema for a practice session.
+    
+    Contains a list of questions for the user to answer.
+    """
+    bank_id: int = Field(..., description="Question bank ID")
+    bank_name: str = Field(..., description="Question bank name")
+    questions: List[PracticeQuestion] = Field(..., description="List of questions")
+    total_questions: int = Field(..., description="Total questions in session")
