@@ -57,6 +57,45 @@ def parse_options(options_str: Optional[str]) -> Optional[dict]:
 # ==========================================
 
 @router.get(
+    "/mistake-notebook/categories",
+    response_model=List[str],
+    summary="Get unique categories from user's wrong questions"
+)
+async def get_wrong_question_categories(
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Get unique categories from the user's wrong questions.
+    
+    This endpoint queries user_question_logs joined with qb_questions
+    to get distinct categories where the user has wrong answers.
+    
+    Returns a list of unique category names for the filter dropdown.
+    """
+    # Query distinct categories from wrong questions
+    result = await db.execute(
+        select(models.QBQuestion.category)
+        .distinct()
+        .join(
+            models.UserQuestionLog,
+            models.UserQuestionLog.question_no == models.QBQuestion.No
+        )
+        .where(
+            and_(
+                models.UserQuestionLog.user_id == current_user.user_id,
+                models.UserQuestionLog.is_correct == False  # Wrong answers only
+            )
+        )
+        .order_by(models.QBQuestion.category)
+    )
+    
+    # Return list of categories (filter out None values)
+    categories = [row[0] for row in result.all() if row[0]]
+    return categories
+
+
+@router.get(
     "/mistake-notebook/questions",
     response_model=schemas.WrongQuestionListResponse,
     summary="Get wrong questions for current user"
