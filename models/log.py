@@ -8,12 +8,16 @@ class UserQuestionLog(Base):
     __tablename__ = "user_question_logs"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("User.user_id", ondelete="CASCADE"), nullable=False)
-    question_no = Column(Integer, ForeignKey("qb_questions.No", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("User.user_id", ondelete="CASCADE"), nullable=False, index=True)
+    question_no = Column(Integer, ForeignKey("qb_questions.No", ondelete="CASCADE"), nullable=False, index=True)
     user_answer = Column(String)
     is_correct = Column(Boolean, nullable=False)
     attempt_time = Column(DateTime, server_default=func.now())
-    is_mastered = Column(Boolean, default=False)  # 用户标记为"已掌握"
+    is_mastered = Column(Boolean, default=False, comment="User marked as mastered")
+
+    # Relationships
+    user = relationship("User", back_populates="question_logs")
+    question = relationship("QBQuestion", back_populates="logs")
 
     def __repr__(self):
         return f"<UserQuestionLog(id={self.id}, user_id={self.user_id}, question_no={self.question_no})>"

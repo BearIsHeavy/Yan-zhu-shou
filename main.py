@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from routes import users, question_banks, questions
+from routes import users, question_banks, questions, mistake
 
 app = FastAPI()
 
@@ -21,4 +21,5 @@ app.add_middleware(
 app.include_router(users.router, prefix="/users", tags=["User"])
 app.include_router(question_banks.router, prefix="/question_banks", tags=["QuestionBank"])
 app.include_router(questions.router, prefix="/upload", tags=["QuestionBank"])
+app.include_router(mistake.router, tags=["MistakeNotebook"])
 # ==================== QuestionBank Endpoints ====================

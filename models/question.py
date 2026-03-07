@@ -44,6 +44,7 @@ class QBQuestion(Base):
     question_bank = relationship("QuestionBank", back_populates="questions")
     stem_text = relationship("StemText", back_populates="question", uselist=False, cascade="all, delete-orphan")
     answer_text = relationship("AnswerText", back_populates="question", uselist=False, cascade="all, delete-orphan")
+    logs = relationship("UserQuestionLog", back_populates="question", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<QBQuestion(No={self.No}, stem={self.stem})>"

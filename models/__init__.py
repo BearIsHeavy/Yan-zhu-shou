@@ -2,7 +2,7 @@
 SQLAlchemy ORM models.
 
 This module exports all model classes for easy importing:
-    from models import User, QuestionBank, QBQuestion, ...
+    from models import User, QuestionBank, QBQuestion, UserQuestionLog, ...
 """
 
 from database import Base
