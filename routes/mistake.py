@@ -543,15 +543,18 @@ async def submit_answer(
 ):
     """
     Submit an answer for a practice question.
-    
+
     This endpoint:
     1. Retrieves the question from qb_questions
     2. Compares user's answer with correct_ans_summary
-    3. Saves the result to user_question_logs
+    3. Saves or updates the result in user_question_logs
     4. Returns whether the answer was correct
-    
+
     For testing purposes, all questions are treated as multiple choice.
     The correct answer comparison is case-insensitive.
+    
+    If a record with the same user_id and question_no already exists,
+    it will be updated instead of creating a duplicate entry.
     """
     # Get the question
     result = await db.execute(
@@ -560,48 +563,62 @@ async def submit_answer(
         )
     )
     question = result.scalar_one_or_none()
-    
+
     if not question:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Question {answer_data.question_no} not found."
         )
-    
+
     # Get correct answer
     correct_answer = question.correct_ans_summary or ""
-    
+
     # Compare answers (case-insensitive for multiple choice)
     # For testing, we treat all as multiple choice
     is_correct = correct_answer.strip().upper() == answer_data.user_answer.strip().upper()
-    
+
+    # Check if a log entry already exists for this user and question
+    existing_log_result = await db.execute(
+        select(models.UserQuestionLog).where(
+            and_(
+                models.UserQuestionLog.user_id == current_user.user_id,
+                models.UserQuestionLog.question_no == answer_data.question_no
+            )
+        )
+    )
+    existing_log = existing_log_result.scalar_one_or_none()
+
     # Check if this is the first time getting this question wrong
     is_first_wrong = False
     if not is_correct:
-        # Check previous attempts
-        previous_wrong = await db.execute(
-            select(func.count()).where(
-                and_(
-                    models.UserQuestionLog.user_id == current_user.user_id,
-                    models.UserQuestionLog.question_no == answer_data.question_no,
-                    models.UserQuestionLog.is_correct == False
-                )
-            )
+        if existing_log:
+            # If log exists and was already wrong, it's not first wrong
+            is_first_wrong = not existing_log.is_correct
+        else:
+            # No existing log, so this is the first wrong attempt
+            is_first_wrong = True
+
+    # Update existing log or create new one
+    if existing_log:
+        # Update existing record
+        existing_log.user_answer = answer_data.user_answer
+        existing_log.is_correct = is_correct
+        # Update attempt_time to current time
+        existing_log.attempt_time = func.now()
+        log = existing_log
+    else:
+        # Create new record
+        log = models.UserQuestionLog(
+            user_id=current_user.user_id,
+            question_no=answer_data.question_no,
+            user_answer=answer_data.user_answer,
+            is_correct=is_correct
         )
-        wrong_count = previous_wrong.scalar() or 0
-        is_first_wrong = (wrong_count == 0)
-    
-    # Save to user_question_logs
-    log = models.UserQuestionLog(
-        user_id=current_user.user_id,
-        question_no=answer_data.question_no,
-        user_answer=answer_data.user_answer,
-        is_correct=is_correct
-    )
-    
-    db.add(log)
+        db.add(log)
+
     await db.flush()
     await db.refresh(log)
-    
+
     # Get explanation if available
     explanation = None
     answer_text_result = await db.execute(
