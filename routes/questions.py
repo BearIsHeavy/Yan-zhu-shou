@@ -1,13 +1,12 @@
-import shutil
 import json
 import csv
+import io
 import xml.etree.ElementTree as ET
 from typing import Optional
 from fastapi import Depends, File, UploadFile, HTTPException, status, Form
 from fastapi.routing import APIRouter
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
-from pathlib import Path
 
 import models
 import schemas
@@ -15,10 +14,6 @@ from database import get_db
 from dependencies import get_current_user
 
 router = APIRouter()
-
-UPLOAD_DIR = Path("uploads")
-UPLOAD_DIR.mkdir(exist_ok=True)
-
 
 STEM_MARKER = "###"  # Marker prefix for stems stored in StemText table
 
@@ -104,7 +99,7 @@ async def upload_csv_questions(
 ):
     """
     Upload CSV file to bulk import questions to a question bank.
-    
+
     CSV format expected columns:
     - category: Subject/topic category
     - stem: Question stem (summary for list display)
@@ -116,12 +111,14 @@ async def upload_csv_questions(
     - full_answer: Full answer text for AnswerText (optional)
     - explanation: Answer explanation (optional)
     """
-    if not file.filename or not file.filename.endswith(".csv"):
+    # Validate file type
+    if not file.filename or not file.filename.lower().endswith(".csv"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid file type. Only CSV files are allowed."
         )
-    
+
+    # Verify question bank exists and belongs to current user
     result = await db.execute(
         select(models.QuestionBank).where(
             and_(
@@ -131,81 +128,87 @@ async def upload_csv_questions(
         )
     )
     question_bank = result.scalar_one_or_none()
-    
+
     if not question_bank:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Question bank {bank_id} not found or you don't have access."
         )
-    
-    file_location = UPLOAD_DIR / file.filename
-    try:
-        with open(file_location, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        
-        questions_added = 0
-        with open(file_location, "r", encoding="utf-8") as csvfile:
-            reader = csv.DictReader(csvfile)
-            
-            for row in reader:
-                options = None
-                if row.get("options"):
-                    try:
-                        options = json.loads(row["options"])
-                    except json.JSONDecodeError:
-                        options = {"format": "JSON"}
-                
-                qus_type = int(row.get("qus_type", 1))
-                full_stem = row.get("stem", "")
-                stem_byte_length = get_byte_length(full_stem)
-                
-                # If stem > 255 bytes, store marker in stem column, otherwise store the stem
-                stem_value = STEM_MARKER if stem_byte_length > 255 else full_stem[:255]
-                
-                item = models.QBQuestion(
-                    bank_id=bank_id,
-                    category=row.get("category", "General"),
-                    stem=stem_value,
-                    qus_type=qus_type,
-                    options=json.dumps(options) if options else None,
-                    correct_ans_summary=row.get("correct_ans_summary"),
-                    is_public=question_bank.is_public,
-                    user_id=current_user.user_id
-                )
-                db.add(item)
-                await db.flush()
 
-                # Store full stem in StemText only if it exceeds 255 bytes
-                if stem_byte_length > 255:
-                    await store_stem_and_answer(
-                        db=db,
-                        question_no=item.No,
-                        stem=full_stem,
-                        full_answer=row.get("full_answer"),
-                        explanation=row.get("explanation")
-                    )
-                elif row.get("full_answer") or row.get("explanation"):
-                    # Still store answer/explanation if provided (even without full stem)
-                    await store_stem_and_answer(
-                        db=db,
-                        question_no=item.No,
-                        stem=full_stem,
-                        full_answer=row.get("full_answer"),
-                        explanation=row.get("explanation")
-                    )
-                questions_added += 1
+    try:
+        # Read CSV content directly from uploaded file (in-memory processing)
+        content = await file.read()
+        csv_text = content.decode("utf-8")
         
+        # Parse CSV from string
+        csv_file = io.StringIO(csv_text)
+        reader = csv.DictReader(csv_file)
+
+        questions_added = 0
+        for row in reader:
+            # Parse options from JSON string if provided
+            options = None
+            if row.get("options"):
+                try:
+                    options = json.loads(row["options"])
+                except json.JSONDecodeError:
+                    options = {"format": "JSON"}
+
+            qus_type = int(row.get("qus_type", 1))
+            full_stem = row.get("stem", "")
+            stem_byte_length = get_byte_length(full_stem)
+
+            # If stem > 255 bytes, store marker in stem column, otherwise store the stem
+            stem_value = STEM_MARKER if stem_byte_length > 255 else full_stem[:255]
+
+            item = models.QBQuestion(
+                bank_id=bank_id,
+                category=row.get("category", "General"),
+                stem=stem_value,
+                qus_type=qus_type,
+                options=json.dumps(options) if options else None,
+                correct_ans_summary=row.get("correct_ans_summary"),
+                is_public=question_bank.is_public,
+                user_id=current_user.user_id
+            )
+            db.add(item)
+            await db.flush()
+
+            # Store full stem in StemText only if it exceeds 255 bytes
+            if stem_byte_length > 255:
+                await store_stem_and_answer(
+                    db=db,
+                    question_no=item.No,
+                    stem=full_stem,
+                    full_answer=row.get("full_answer"),
+                    explanation=row.get("explanation")
+                )
+            elif row.get("full_answer") or row.get("explanation"):
+                # Still store answer/explanation if provided (even without full stem)
+                await store_stem_and_answer(
+                    db=db,
+                    question_no=item.No,
+                    stem=full_stem,
+                    full_answer=row.get("full_answer"),
+                    explanation=row.get("explanation")
+                )
+            questions_added += 1
+
         await db.commit()
-        file_location.unlink(missing_ok=True)
-        
+
         return {
             "detail": f"Successfully imported {questions_added} questions to question bank '{question_bank.name}'",
             "questions_added": questions_added
         }
-        
+
+    except UnicodeDecodeError as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid file encoding. Please use UTF-8 encoded CSV files: {str(e)}"
+        )
     except Exception as e:
         await db.rollback()
-        file_location.unlink(missing_ok=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to process CSV file: {str(e)}"
@@ -221,7 +224,7 @@ async def upload_xml_questions(
 ):
     """
     Upload XML file to bulk import questions to a question bank.
-    
+
     XML format expected:
     <questions>
         <question>
@@ -237,12 +240,14 @@ async def upload_xml_questions(
         </question>
     </questions>
     """
-    if not file.filename or not file.filename.endswith(".xml"):
+    # Validate file type
+    if not file.filename or not file.filename.lower().endswith(".xml"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid file type. Only XML files are allowed."
         )
-    
+
+    # Verify question bank exists and belongs to current user
     result = await db.execute(
         select(models.QuestionBank).where(
             and_(
@@ -252,27 +257,29 @@ async def upload_xml_questions(
         )
     )
     question_bank = result.scalar_one_or_none()
-    
+
     if not question_bank:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Question bank {bank_id} not found or you don't have access."
         )
-    
-    file_location = UPLOAD_DIR / file.filename
+
     try:
-        with open(file_location, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        # Read XML content directly from uploaded file (in-memory processing)
+        content = await file.read()
+        xml_text = content.decode("utf-8")
         
-        tree = ET.parse(file_location)
+        # Parse XML from string
+        tree = ET.parse(io.StringIO(xml_text))
         root = tree.getroot()
-        
+
         questions_added = 0
         for question_elem in root.findall("question"):
             def get_elem_text(tag):
                 elem = question_elem.find(tag)
                 return elem.text if elem is not None and elem.text else ""
-            
+
+            # Parse options from JSON string if provided
             options = None
             options_str = get_elem_text("options")
             if options_str:
@@ -280,16 +287,16 @@ async def upload_xml_questions(
                     options = json.loads(options_str)
                 except json.JSONDecodeError:
                     options = {"format": "JSON"}
-            
+
             qus_type_str = get_elem_text("qus_type")
             qus_type = int(qus_type_str) if qus_type_str else 1
 
             full_stem = get_elem_text("stem")
             stem_byte_length = get_byte_length(full_stem)
-            
+
             # If stem > 255 bytes, store marker in stem column, otherwise store the stem
             stem_value = STEM_MARKER if stem_byte_length > 255 else full_stem[:255]
-            
+
             item = models.QBQuestion(
                 bank_id=bank_id,
                 category=get_elem_text("category") or "General",
@@ -322,25 +329,28 @@ async def upload_xml_questions(
                     explanation=get_elem_text("explanation")
                 )
             questions_added += 1
-        
+
         await db.commit()
-        file_location.unlink(missing_ok=True)
-        
+
         return {
             "detail": f"Successfully imported {questions_added} questions to question bank '{question_bank.name}'",
             "questions_added": questions_added
         }
-        
+
     except ET.ParseError as e:
         await db.rollback()
-        file_location.unlink(missing_ok=True)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid XML format: {str(e)}"
         )
+    except UnicodeDecodeError as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid file encoding. Please use UTF-8 encoded XML files: {str(e)}"
+        )
     except Exception as e:
         await db.rollback()
-        file_location.unlink(missing_ok=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to process XML file: {str(e)}"
