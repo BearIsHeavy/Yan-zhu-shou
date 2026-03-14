@@ -3,6 +3,7 @@ from sqlalchemy.orm import declarative_base
 import os
 from dotenv import load_dotenv
 import redis.asyncio as redis
+from typing import Optional
 
 load_dotenv()
 
@@ -15,12 +16,23 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 # Create Async engine
 engine = create_async_engine(DATABASE_URL, echo=True)
 
-# Redis client initialization
-redis_client = redis.from_url(
-    REDIS_URL,
-    encoding="utf-8",
-    decode_responses=True
-)
+# Redis client initialization (lazy loading to handle connection errors)
+_redis_client: Optional[redis.Redis] = None
+
+def get_redis_client() -> Optional[redis.Redis]:
+    """Get Redis client instance, returns None if Redis is not available."""
+    global _redis_client
+    if _redis_client is None:
+        try:
+            _redis_client = redis.from_url(
+                REDIS_URL,
+                encoding="utf-8",
+                decode_responses=True
+            )
+        except Exception as e:
+            print(f"Warning: Failed to connect to Redis: {e}")
+            return None
+    return _redis_client
 
 # Base class for models
 AsyncSessionLocal = async_sessionmaker(
@@ -45,6 +57,6 @@ async def get_db():
 
 
 # Dependency: Get Redis client
-async def get_redis() -> redis.Redis:
-    """Get Redis client instance."""
-    return redis_client
+async def get_redis() -> Optional[redis.Redis]:
+    """Get Redis client instance, returns None if Redis is not available."""
+    return get_redis_client()

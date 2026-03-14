@@ -1,5 +1,6 @@
 import json
 from datetime import timedelta
+from typing import Optional
 
 from fastapi import Depends, HTTPException, status
 from fastapi.routing import APIRouter
@@ -22,36 +23,46 @@ router = APIRouter()
 async def user_login(
         form_data: OAuth2PasswordRequestForm = Depends(),
         db: AsyncSession = Depends(get_db),
-        redis: Redis = Depends(get_redis)
+        redis: Optional[Redis] = Depends(get_redis)
 ):
     """Login and get access token. Cache frequently accessed users in Redis."""
     # Find user by email
     result = await db.execute(select(models.User).where(models.User.email == form_data.username))
     user = result.scalar_one_or_none()
 
-    if user is None or not auth.verify_password(form_data.password, user.hash_password):
+    # Check if user exists and has a valid password hash
+    if user is None or user.hash_password is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Verify password
+    if not auth.verify_password(form_data.password, user.hash_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Cache user data in Redis for faster subsequent access
-    cache_ttl = 300
-    try:
-        user_dict = {
-            "user_id": user.user_id,
-            "email": user.email,
-            "name": user.name,
-            "hash_password": user.hash_password,
-            "phone": user.phone,
-            "gender": user.gender,
-            "created_at": user.created_at.isoformat() if user.created_at else None
-        }
-        await redis.setex(f"user:{user.email}", cache_ttl, json.dumps(user_dict))
-    except Exception as e:
-        # Log error but don't fail login if Redis fails
-        print(f"Warning: Failed to cache user data: {e}")
+    # Cache user data in Redis for faster subsequent access (only if Redis is available)
+    if redis:
+        cache_ttl = 300
+        try:
+            user_dict = {
+                "user_id": user.user_id,
+                "email": user.email,
+                "name": user.name,
+                "hash_password": user.hash_password,
+                "phone": user.phone,
+                "gender": user.gender,
+                "created_at": user.created_at.isoformat() if user.created_at else None
+            }
+            await redis.setex(f"user:{user.email}", cache_ttl, json.dumps(user_dict))
+        except Exception as e:
+            # Log error but don't fail login if Redis fails
+            print(f"Warning: Failed to cache user data: {e}")
 
     # create access token
     access_token_expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -65,7 +76,7 @@ async def user_login(
 async def user_register(
     user_data: schemas.UserRegister,
     db: AsyncSession = Depends(get_db),
-    redis: Redis = Depends(get_redis)
+    redis: Optional[Redis] = Depends(get_redis)
 ):
     """Register a new user"""
     # check if email already exists
@@ -90,22 +101,23 @@ async def user_register(
     await db.commit()  # Commit to get created_at
     await db.refresh(new_user)
 
-    # Cache the new user data
-    cache_ttl = 300
-    try:
-        user_dict = {
-            "user_id": new_user.user_id,
-            "email": new_user.email,
-            "name": new_user.name,
-            "hash_password": new_user.hash_password,
-            "phone": new_user.phone,
-            "gender": new_user.gender,
-            "created_at": new_user.created_at.isoformat() if new_user.created_at else None
-        }
-        await redis.setex(f"user:{new_user.email}", cache_ttl, json.dumps(user_dict))
-    except Exception as e:
-        # Log error but don't fail registration if Redis fails
-        print(f"Warning: Failed to cache user data: {e}")
+    # Cache the new user data (only if Redis is available)
+    if redis:
+        cache_ttl = 300
+        try:
+            user_dict = {
+                "user_id": new_user.user_id,
+                "email": new_user.email,
+                "name": new_user.name,
+                "hash_password": new_user.hash_password,
+                "phone": new_user.phone,
+                "gender": new_user.gender,
+                "created_at": new_user.created_at.isoformat() if new_user.created_at else None
+            }
+            await redis.setex(f"user:{new_user.email}", cache_ttl, json.dumps(user_dict))
+        except Exception as e:
+            # Log error but don't fail registration if Redis fails
+            print(f"Warning: Failed to cache user data: {e}")
 
     return new_user
 

@@ -11,6 +11,7 @@ from database import Base
 from models.user import User
 from models.question import QuestionBank, QBQuestion, StemText, AnswerText
 from models.log import UserQuestionLog, SecurityLog
+from models.feedback import Feedback, FeedbackVote, FeedbackNotification, FeedbackCategory, FeedbackStatus
 
 # Export all models
 __all__ = [
@@ -22,4 +23,9 @@ __all__ = [
     "AnswerText",
     "UserQuestionLog",
     "SecurityLog",
+    "Feedback",
+    "FeedbackVote",
+    "FeedbackNotification",
+    "FeedbackCategory",
+    "FeedbackStatus",
 ]

@@ -1,9 +1,11 @@
 import json
 import os
+from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from redis.asyncio import Redis
 
 import models
 from database import get_db, get_redis
@@ -15,7 +17,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
-    redis = Depends(get_redis)
+    redis: Optional[Redis] = Depends(get_redis)
 ) -> models.User:
     """Get current authenticated user from JWT token with Redis cache."""
     payload = auth.verify_token(token)
@@ -32,23 +34,20 @@ async def get_current_user(
             detail="Invalid token payload",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    # Try to get user from Redis cache
-    cache_key = f"user:{email}"
-    cached_user = await redis.get(cache_key)
-    
+
     # Query database (always use DB to get session-bound object)
     result = await db.execute(select(models.User).where(models.User.email == email))
     user = result.scalar_one_or_none()
-    
+
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
-    
-    # Cache the user data with TTL (if not already cached)
-    if not cached_user:
+
+    # Cache the user data with TTL (only if Redis is available)
+    if redis:
+        cache_key = f"user:{email}"
         cache_ttl = int(os.getenv("REDIS_CACHE_TTL", 300))
         try:
             user_dict = {
