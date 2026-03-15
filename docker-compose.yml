@@ -1,19 +1,77 @@
 services:
-  # Redis In-Memory Database Setup
+  # ==============================================================================
+  # FastAPI Application Service
+  # ==============================================================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: yanzhushou_app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # Database configuration (uses postgres service)
+      DATABASE_URL: postgresql+asyncpg://api:api@postgres:5432/fastapi_db
+      # Redis configuration (uses redis service)
+      REDIS_URL: redis://redis:6379/0
+      # JWT Configuration
+      SECRET_KEY: ${SECRET_KEY:-your-super-secret-key-change-this-in-production}
+      ALGORITHM: ${ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      # Redis Cache TTL
+      REDIS_CACHE_TTL: ${REDIS_CACHE_TTL:-300}
+      # Feedback System Configuration
+      FEEDBACK_VOTE_THRESHOLD: ${FEEDBACK_VOTE_THRESHOLD:-10}
+      FEEDBACK_NOTIFICATION_ENABLED: ${FEEDBACK_NOTIFICATION_ENABLED:-true}
+      FEEDBACK_NOTIFICATION_EMAIL: ${FEEDBACK_NOTIFICATION_EMAIL:-dev@example.com}
+      FEEDBACK_NOTIFICATION_WEBHOOK_URL: ${FEEDBACK_NOTIFICATION_WEBHOOK_URL:-}
+      FEEDBACK_SUBMISSION_LIMIT_HOURS: ${FEEDBACK_SUBMISSION_LIMIT_HOURS:-24}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      # Mount for development (optional, comment out for production)
+      # - .:/app
+      - ./logs:/app/logs
+    networks:
+      - yanzhushou_network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/docs')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ==============================================================================
+  # Redis In-Memory Database
+  # ==============================================================================
   redis:
     image: redis:7.2-alpine
-    container_name: backend_redis
-    restart: "no"
+    container_name: yanzhushou_redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    networks:
+      - yanzhushou_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
-  # PostgreSQL Database Setup
+  # ==============================================================================
+  # PostgreSQL Database
+  # ==============================================================================
   postgres:
     image: postgres:16-alpine
-    container_name: backend_postgres
-    restart: "no"
+    container_name: yanzhushou_postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: api
       POSTGRES_PASSWORD: api
@@ -22,8 +80,29 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Optional: Mount custom postgres config
+      # - ./postgres.conf:/etc/postgresql/postgresql.conf
+    networks:
+      - yanzhushou_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U api -d fastapi_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
-# Define persistent storage
+# ==============================================================================
+# Persistent Storage
+# ==============================================================================
 volumes:
   redis_data:
+    driver: local
   postgres_data:
+    driver: local
+
+# ==============================================================================
+# Networks
+# ==============================================================================
+networks:
+  yanzhushou_network:
+    driver: bridge
