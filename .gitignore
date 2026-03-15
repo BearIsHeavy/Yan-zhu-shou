@@ -7,10 +7,10 @@ openapi.json
 docs/*
 test_api/Bruno
 
-# Docker
-logs/
-*.log
-
 # Environment
 .env
 ! .env.example
+
+# Logs
+logs/
+*.log
