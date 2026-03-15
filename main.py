@@ -23,4 +23,3 @@ app.include_router(question_banks.router, prefix="/question_banks", tags=["Quest
 app.include_router(questions.router, prefix="/upload", tags=["QuestionBank"])
 app.include_router(mistake.router, tags=["MistakeNotebook"])
 app.include_router(feedback.router, prefix="/api/feedback", tags=["Feedback"])
-# ==================== QuestionBank Endpoints ====================
