@@ -26,12 +26,12 @@ def _is_developer_or_admin(user: models.User) -> bool:
 
 @router.get("", response_model=feedback_schemas.FeedbackListResponse)
 async def list_feedbacks(
-    status_filter: Optional[str] = None,
-    category: Optional[str] = None,
-    sort_by: str = "vote_count",
-    page: int = 1,
-    page_size: int = 20,
-    db: AsyncSession = Depends(get_db),
+        status_filter: Optional[str] = None,
+        category: Optional[str] = None,
+        sort_by: str = "vote_count",
+        page: int = 1,
+        page_size: int = 20,
+        db: AsyncSession = Depends(get_db),
 ):
     """
     List all feedback with filtering and pagination.
@@ -45,10 +45,10 @@ async def list_feedbacks(
     # Validate sort_by
     if sort_by not in ["vote_count", "created_at", "resolved_at"]:
         sort_by = "vote_count"
-    
+
     # Calculate offset
     offset = (page - 1) * page_size
-    
+
     # Get feedbacks
     feedbacks, total = await feedback_service.list_feedbacks(
         db=db,
@@ -58,7 +58,7 @@ async def list_feedbacks(
         limit=page_size,
         offset=offset,
     )
-    
+
     # Build response
     items = []
     for feedback in feedbacks:
@@ -79,7 +79,7 @@ async def list_feedbacks(
                 name=feedback.user.name,
             ) if feedback.user else None,
         ))
-    
+
     return feedback_schemas.FeedbackListResponse(
         items=items,
         total=total,
@@ -91,7 +91,7 @@ async def list_feedbacks(
 
 @router.get("/stats", response_model=feedback_schemas.FeedbackStats)
 async def get_feedback_stats(
-    db: AsyncSession = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
 ):
     """Get feedback statistics."""
     stats = await feedback_service.get_feedback_stats(db)
@@ -100,9 +100,9 @@ async def get_feedback_stats(
 
 @router.post("", response_model=feedback_schemas.FeedbackResponse, status_code=status.HTTP_201_CREATED)
 async def create_feedback(
-    feedback_data: feedback_schemas.FeedbackCreate,
-    db: AsyncSession = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+        feedback_data: feedback_schemas.FeedbackCreate,
+        db: AsyncSession = Depends(get_db),
+        current_user: models.User = Depends(get_current_user),
 ):
     """
     Submit new feedback.
@@ -117,7 +117,7 @@ async def create_feedback(
         user_id=current_user.user_id,
         feedback_data=feedback_data,
     )
-    
+
     return feedback_schemas.FeedbackResponse(
         id=feedback.id,
         user_id=feedback.user_id,
@@ -139,9 +139,9 @@ async def create_feedback(
 
 @router.get("/{feedback_id}", response_model=feedback_schemas.FeedbackResponse)
 async def get_feedback(
-    feedback_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: Optional[models.User] = Depends(get_current_user),
+        feedback_id: int,
+        db: AsyncSession = Depends(get_db),
+        current_user: Optional[models.User] = Depends(get_current_user),
 ):
     """
     Get feedback details by ID.
@@ -184,10 +184,10 @@ async def get_feedback(
 
 @router.put("/{feedback_id}", response_model=feedback_schemas.FeedbackResponse)
 async def update_feedback(
-    feedback_id: int,
-    feedback_update: feedback_schemas.FeedbackUpdate,
-    db: AsyncSession = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+        feedback_id: int,
+        feedback_update: feedback_schemas.FeedbackUpdate,
+        db: AsyncSession = Depends(get_db),
+        current_user: models.User = Depends(get_current_user),
 ):
     """
     Update feedback status and/or developer response.
@@ -231,9 +231,9 @@ async def update_feedback(
 
 @router.delete("/{feedback_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_feedback(
-    feedback_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+        feedback_id: int,
+        db: AsyncSession = Depends(get_db),
+        current_user: models.User = Depends(get_current_user),
 ):
     """
     Delete feedback.
@@ -243,17 +243,17 @@ async def delete_feedback(
     # TODO: Implement proper admin check
     # For now, allow deletion only if user is author and no votes
     feedback = await feedback_service.get_feedback(db, feedback_id)
-    
+
     if feedback is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Feedback not found",
         )
-    
+
     # Check permissions
     is_author = feedback.user_id == current_user.user_id
     is_admin = False  # TODO: Implement admin check
-    
+
     if not is_admin:
         if not is_author:
             raise HTTPException(
@@ -265,16 +265,16 @@ async def delete_feedback(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Cannot delete feedback with votes",
             )
-    
+
     await feedback_service.delete_feedback(db, feedback_id)
     return None
 
 
 @router.post("/{feedback_id}/vote", response_model=feedback_schemas.FeedbackVoteResponse)
 async def vote_feedback(
-    feedback_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+        feedback_id: int,
+        db: AsyncSession = Depends(get_db),
+        current_user: models.User = Depends(get_current_user),
 ):
     """
     Toggle vote for feedback.
@@ -295,9 +295,9 @@ async def vote_feedback(
 
 @router.get("/{feedback_id}/vote", response_model=feedback_schemas.FeedbackVoteResponse)
 async def get_vote_status(
-    feedback_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+        feedback_id: int,
+        db: AsyncSession = Depends(get_db),
+        current_user: models.User = Depends(get_current_user),
 ):
     """
     Get current user's vote status for a feedback.
@@ -315,10 +315,10 @@ async def get_vote_status(
 
 @router.get("/me/submissions", response_model=feedback_schemas.FeedbackListResponse)
 async def get_my_feedback(
-    page: int = 1,
-    page_size: int = 10,
-    db: AsyncSession = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+        page: int = 1,
+        page_size: int = 10,
+        db: AsyncSession = Depends(get_db),
+        current_user: models.User = Depends(get_current_user),
 ):
     """
     Get current user's feedback submissions.
@@ -362,8 +362,8 @@ async def get_my_feedback(
 
 @router.get("/me/submission-status", response_model=feedback_schemas.FeedbackSubmissionStatus)
 async def get_submission_status(
-    db: AsyncSession = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+        current_user: models.User = Depends(get_current_user),
 ):
     """
     Check if current user can submit feedback today.
