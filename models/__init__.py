@@ -12,6 +12,7 @@ from models.user import User
 from models.question import QuestionBank, QBQuestion, StemText, AnswerText
 from models.log import UserQuestionLog, SecurityLog
 from models.feedback import Feedback, FeedbackVote, FeedbackNotification, FeedbackCategory, FeedbackStatus
+from models.blog import Blog, BlogLike, BlogComment
 
 # Export all models
 __all__ = [
@@ -28,4 +29,7 @@ __all__ = [
     "FeedbackNotification",
     "FeedbackCategory",
     "FeedbackStatus",
+    "Blog",
+    "BlogLike",
+    "BlogComment",
 ]

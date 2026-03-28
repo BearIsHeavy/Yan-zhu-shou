@@ -10,6 +10,23 @@ sys.path.insert(0, PROJECT_ROOT)
 
 from database import engine, Base
 
+# Import all models to register them with Base.metadata
+from models import (
+    User,
+    QuestionBank,
+    QBQuestion,
+    StemText,
+    AnswerText,
+    UserQuestionLog,
+    SecurityLog,
+    Feedback,
+    FeedbackVote,
+    FeedbackNotification,
+    Blog,
+    BlogLike,
+    BlogComment,
+)
+
 async def init_db():
     try:
         async with engine.begin() as conn:
