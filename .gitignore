@@ -4,7 +4,6 @@ __pycache__
 .DS_Store
 openapi.json
 
-docs/*
 test_api/Bruno
 
 # Environment
