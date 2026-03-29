@@ -48,7 +48,8 @@ async def get_db():
     async with AsyncSessionLocal() as session:
         try:
             yield session
-            await session.commit()
+            # Don't auto-commit here - let service functions handle their own commits
+            # This prevents double-commit issues
         except Exception:
             await session.rollback()
             raise

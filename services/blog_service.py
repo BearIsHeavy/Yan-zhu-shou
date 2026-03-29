@@ -179,7 +179,7 @@ async def create_blog(
     )
 
     db.add(blog)
-    await db.flush()
+    await db.flush()  # Get blog_id
     
     # Save content file if provided
     if content_file:
@@ -192,9 +192,13 @@ async def create_blog(
             user_id=user_id,
         )
         blog.content_file_path = file_path
-
-    await db.refresh(blog)
     
+    # Commit the transaction to ensure data is persisted
+    await db.commit()
+    
+    # Refresh to get all committed data
+    await db.refresh(blog)
+
     # Convert to dict to avoid lazy loading issues
     return {
         "blog_id": blog.blog_id,
@@ -237,7 +241,7 @@ async def update_blog(
     if content_file and user_id:
         if blog.content_file_path:
             delete_blog_content(user_id, blog.content_file_path)
-        
+
         file_content = await content_file.read()
         original_filename = content_file.filename or "blog.md"
         file_path = save_blog_content(
@@ -247,14 +251,13 @@ async def update_blog(
             user_id=user_id,
         )
         blog.content_file_path = file_path
-        # print(f"===============================================================blog {blog.content_file_path}")
 
     for field, value in blog_update.items():
         if value is not None:
-            # print(f"===============================================================blog {blog}, field: {field}, value:{value}")
             setattr(blog, field, value)
 
     await db.flush()
+    await db.commit()
     await db.refresh(blog)
 
     return blog
@@ -284,7 +287,7 @@ async def delete_blog(
         delete_blog_content(user_id, blog.content_file_path)
 
     await db.delete(blog)
-    await db.flush()
+    await db.commit()
 
     return True
 
@@ -298,6 +301,7 @@ async def increment_view_count(db: AsyncSession, blog_id: int) -> None:
     if blog:
         blog.view_count += 1
         await db.flush()
+        await db.commit()
 
 
 async def get_user_like(
@@ -463,10 +467,12 @@ async def create_comment(
 
     db.add(comment)
     await db.flush()
+    await db.commit()
     await db.refresh(comment)
 
     blog.comment_count += 1
     await db.flush()
+    await db.commit()
 
     return comment
 
@@ -493,6 +499,7 @@ async def update_comment(
 
     comment.content = content
     await db.flush()
+    await db.commit()
     await db.refresh(comment)
 
     return comment
@@ -524,9 +531,11 @@ async def delete_comment(
     comment.is_deleted = True
     comment.content = "[Deleted]"
     await db.flush()
+    await db.commit()
 
     blog.comment_count = max(0, blog.comment_count - 1)
     await db.flush()
+    await db.commit()
 
     return True
 

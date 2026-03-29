@@ -49,6 +49,8 @@ async def create_notification_record(
     )
     db.add(notification)
     await db.flush()
+    await db.commit()
+    await db.refresh(notification)
     return notification
 
 

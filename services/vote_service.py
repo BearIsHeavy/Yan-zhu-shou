@@ -85,14 +85,15 @@ async def vote_feedback(
         db.add(vote)
         feedback.vote_count += 1
         has_voted = True
-        
+
         # Check if threshold is reached and send notification
         if feedback.vote_count >= FEEDBACK_VOTE_THRESHOLD:
             await check_and_send_threshold_notification(db, feedback)
-    
+
     await db.flush()
+    await db.commit()
     await db.refresh(feedback)
-    
+
     return {
         "has_voted": has_voted,
         "vote_count": feedback.vote_count,

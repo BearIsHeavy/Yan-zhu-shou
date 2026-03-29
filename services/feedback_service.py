@@ -72,11 +72,12 @@ async def create_feedback(
         content=feedback_data.content,
         category=feedback_data.category.value,
     )
-    
+
     db.add(feedback)
     await db.flush()
+    await db.commit()
     await db.refresh(feedback)
-    
+
     return feedback
 
 
@@ -184,17 +185,18 @@ async def update_feedback(
         feedback.status = status_update
         if status_update in [models.FeedbackStatus.COMPLETED.value, models.FeedbackStatus.REJECTED.value]:
             feedback.resolved_at = datetime.utcnow()
-    
+
     if developer_response is not None:
         feedback.developer_response = developer_response
         if developer_response:
             feedback.responded_at = datetime.utcnow()
         else:
             feedback.responded_at = None
-    
+
     await db.flush()
+    await db.commit()
     await db.refresh(feedback)
-    
+
     return feedback
 
 
@@ -204,14 +206,14 @@ async def delete_feedback(
 ) -> bool:
     """
     Delete feedback.
-    
+
     Args:
         db: Database session
         feedback_id: Feedback ID
-        
+
     Returns:
         True if deleted
-        
+
     Raises:
         HTTPException: If feedback not found
     """
@@ -219,16 +221,16 @@ async def delete_feedback(
         select(models.Feedback).where(models.Feedback.id == feedback_id)
     )
     feedback = result.scalar_one_or_none()
-    
+
     if feedback is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Feedback not found",
         )
-    
+
     await db.delete(feedback)
-    await db.flush()
-    
+    await db.commit()
+
     return True
 
 

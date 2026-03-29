@@ -169,6 +169,7 @@ async def update_current_user(
     for field, value in update_data.items():
         setattr(current_user, field, value)
     await db.flush()
+    await db.commit()
     await db.refresh(current_user)
 
     # Invalidate cache after update
@@ -223,6 +224,8 @@ async def upload_bio(
     if user:
         user.bio_file_path = file_path
         await db.flush()
+        await db.commit()
+        await db.refresh(user)
 
     return schemas.BioFileResponse(
         file_path=file_path,
@@ -312,5 +315,6 @@ async def delete_bio(
     if user:
         user.bio_file_path = None
         await db.flush()
+        await db.commit()
 
     return None
