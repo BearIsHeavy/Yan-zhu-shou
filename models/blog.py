@@ -1,31 +1,7 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Boolean, UniqueConstraint, Table
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, Text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from database import Base
-
-
-# Association table for blog-tag many-to-many relationship
-blog_tags_association = Table(
-    "blog_tags_association",
-    Base.metadata,
-    Column("blog_id", Integer, ForeignKey("blogs.blog_id", ondelete="CASCADE"), primary_key=True),
-    Column("tag_id", Integer, ForeignKey("blog_tags.tag_id", ondelete="CASCADE"), primary_key=True),
-)
-
-
-class BlogTag(Base):
-    """Tag model for categorizing blog posts."""
-    __tablename__ = "blog_tags"
-
-    tag_id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(10), unique=True, nullable=False, index=True)  # Max 10 characters
-    created_at = Column(DateTime, server_default=func.now())
-
-    # Relationships
-    blogs = relationship("Blog", secondary=blog_tags_association, back_populates="tags")
-
-    def __repr__(self):
-        return f"<BlogTag(tag_id={self.tag_id}, name={self.name})>"
 
 
 class Blog(Base):
@@ -35,8 +11,9 @@ class Blog(Base):
     blog_id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("User.user_id", ondelete="CASCADE"), nullable=False)
     title = Column(String(200), nullable=False)
-    content_file_path = Column(String(255))  # Relative path to content file (markdown or HTML)
-    content_type = Column(String(20), default="markdown", nullable=False)  # "markdown" or "html"
+    content_file_path = Column(String(255))  # Relative path to content file
+    content_type = Column(String(20), default="markdown", nullable=False)
+    tags = Column(String(100))  # Comma-separated tags (max 5 tags, each max 10 chars)
     is_published = Column(Boolean, default=True, nullable=False)
     view_count = Column(Integer, default=0, nullable=False)
     like_count = Column(Integer, default=0, nullable=False)
@@ -48,7 +25,6 @@ class Blog(Base):
     user = relationship("User", back_populates="blogs")
     likes = relationship("BlogLike", back_populates="blog", cascade="all, delete-orphan")
     comments = relationship("BlogComment", back_populates="blog", cascade="all, delete-orphan")
-    tags = relationship("BlogTag", secondary=blog_tags_association, back_populates="blogs")
 
     def __repr__(self):
         return f"<Blog(blog_id={self.blog_id}, title={self.title}, user_id={self.user_id})>"
@@ -66,11 +42,6 @@ class BlogLike(Base):
     # Relationships
     blog = relationship("Blog", back_populates="likes")
     user = relationship("User", back_populates="blog_likes")
-
-    # Unique constraint: one like per user per blog
-    __table_args__ = (
-        UniqueConstraint("blog_id", "user_id", name="uq_blog_user_like"),
-    )
 
     def __repr__(self):
         return f"<BlogLike(like_id={self.like_id}, blog_id={self.blog_id}, user_id={self.user_id})>"

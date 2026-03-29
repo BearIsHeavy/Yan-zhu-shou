@@ -4,12 +4,13 @@ import math
 from typing import Optional
 
 from fastapi import Depends, HTTPException, status, APIRouter, UploadFile, File, Form
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import models
 from schemas import blog as blog_schemas
 from dependencies import get_current_user, get_db
-from services import blog_service
+from services import blog_service, tags_from_string
 
 router = APIRouter(prefix="/blogs", tags=["Blog"])
 
@@ -32,43 +33,42 @@ async def list_blogs(
     - **search**: Search in title
     - **user_id**: Filter by author ID
     - **content_type**: Filter by content type (markdown, html)
-    - **tags**: Filter by tags (comma-separated, blogs must have ALL specified tags)
+    - **tags**: Filter by tags (comma-separated)
     - **sort_by**: Sort by (created_at, updated_at, view_count, like_count)
     - **page**: Page number (1-indexed)
     - **page_size**: Items per page
     """
-    # Validate sort_by
     if sort_by not in ["created_at", "updated_at", "view_count", "like_count"]:
         sort_by = "created_at"
 
-    # Parse tags from comma-separated string
-    tag_list = None
-    if tags:
-        tag_list = [t.strip() for t in tags.split(",") if t.strip()]
-
-    # Calculate offset
     offset = (page - 1) * page_size
 
-    # Get blogs
     blogs, total = await blog_service.list_blogs(
         db=db,
         search=search,
         user_id=user_id,
         content_type=content_type,
-        tags=tag_list,
+        tags=tags,
         sort_by=sort_by,
         limit=page_size,
         offset=offset,
         current_user_id=current_user.user_id if current_user else None,
     )
 
-    # Build response
     items = []
     for blog in blogs:
         has_liked = False
         if current_user:
             like_status = await blog_service.get_like_status(db, blog.blog_id, current_user.user_id)
             has_liked = like_status["has_liked"]
+
+        # Safely access user data (already loaded by selectinload)
+        author_data = None
+        if blog.user:
+            author_data = blog_schemas.BlogUserResponse(
+                user_id=blog.user.user_id,
+                name=blog.user.name,
+            )
 
         items.append(blog_schemas.BlogListItem(
             blog_id=blog.blog_id,
@@ -81,12 +81,9 @@ async def list_blogs(
             comment_count=blog.comment_count,
             created_at=blog.created_at,
             updated_at=blog.updated_at,
-            author=blog_schemas.BlogUserResponse(
-                user_id=blog.user.user_id,
-                name=blog.user.name,
-            ) if blog.user else None,
+            author=author_data,
             has_liked=has_liked,
-            tags=[blog_schemas.BlogTagResponse(tag_id=t.tag_id, name=t.name) for t in blog.tags],
+            tags=tags_from_string(blog.tags),
         ))
 
     return blog_schemas.BlogListResponse(
@@ -104,9 +101,28 @@ async def get_blog_stats(
     current_user: Optional[models.User] = Depends(get_current_user),
 ):
     """Get blog statistics (personal if authenticated, global otherwise)."""
-    user_id = current_user.user_id if current_user else None
-    stats = await blog_service.get_blog_stats(db, user_id=user_id)
-    return blog_schemas.BlogStats(**stats)
+    if current_user:
+        # Personal stats for authenticated user
+        stats = await blog_service.get_blog_stats(db, user_id=current_user.user_id)
+        return blog_schemas.BlogStats(
+            total_posts=stats["total_posts"],
+            total_views=stats["total_views"],
+            total_likes=stats["total_likes"],
+            total_comments=stats["total_comments"],
+            my_posts=stats["total_posts"],
+            my_drafts=stats["draft_count"],
+        )
+    else:
+        # Global stats for unauthenticated
+        stats = await blog_service.get_blog_stats(db, user_id=None)
+        return blog_schemas.BlogStats(
+            total_posts=stats["total_posts"],
+            total_views=stats["total_views"],
+            total_likes=stats["total_likes"],
+            total_comments=stats["total_comments"],
+            my_posts=0,
+            my_drafts=0,
+        )
 
 
 @router.get("/my", response_model=blog_schemas.BlogListResponse)
@@ -116,11 +132,7 @@ async def get_my_blogs(
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """
-    Get current user's blog posts (including drafts).
-
-    Paginated list of all blogs created by the current user.
-    """
+    """Get current user's blog posts (including drafts)."""
     offset = (page - 1) * page_size
 
     blogs, total = await blog_service.get_user_blog_submissions(
@@ -147,7 +159,8 @@ async def get_my_blogs(
                 user_id=current_user.user_id,
                 name=current_user.name,
             ),
-            has_liked=False,  # User knows their own blogs
+            has_liked=False,
+            tags=tags_from_string(blog.tags),
         ))
 
     return blog_schemas.BlogListResponse(
@@ -157,6 +170,84 @@ async def get_my_blogs(
         page_size=page_size,
         total_pages=math.ceil(total / page_size) if total > 0 else 0,
     )
+
+
+# ============== Tags Endpoints (must be before /{blog_id}) ==============
+
+
+@router.get("/tags", response_model=blog_schemas.BlogTagListResponse)
+async def list_tags(
+    search: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user),
+):
+    """
+    List all available tags.
+
+    - **search**: Filter tags by name (partial match)
+    """
+    from sqlalchemy import distinct
+    
+    query = select(distinct(models.Blog.tags)).where(models.Blog.is_published == True)
+    
+    if search:
+        query = query.where(models.Blog.tags.ilike(f"%{search}%"))
+    
+    result = await db.execute(query)
+    all_tags_str = result.scalars().all()
+    
+    tags_set = set()
+    for tags_str in all_tags_str:
+        if tags_str:
+            for tag in tags_from_string(tags_str):
+                tags_set.add(tag)
+    
+    sorted_tags = sorted(tags_set)
+    
+    if search:
+        sorted_tags = [t for t in sorted_tags if search.lower() in t.lower()]
+    
+    items = [
+        blog_schemas.BlogTagResponse(tag_id=i, name=tag)
+        for i, tag in enumerate(sorted_tags, start=1)
+    ]
+
+    return blog_schemas.BlogTagListResponse(
+        items=items,
+        total=len(items),
+    )
+
+
+@router.post("/tags", response_model=blog_schemas.BlogTagResponse, status_code=status.HTTP_201_CREATED)
+async def create_tag(
+    tag_data: blog_schemas.BlogTagCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """
+    Create a new tag.
+
+    Note: Since tags are stored as comma-separated strings in blogs table,
+    this endpoint just validates and returns the tag.
+    Tags are automatically created when used in blog creation.
+    """
+    result = await db.execute(
+        select(models.Blog.tags).where(
+            models.Blog.tags.ilike(f"{tag_data.name},%") |
+            models.Blog.tags.ilike(f"%,{tag_data.name},%") |
+            models.Blog.tags.ilike(f"%,{tag_data.name}") |
+            (models.Blog.tags == tag_data.name)
+        ).limit(1)
+    )
+    existing = result.scalar_one_or_none()
+    
+    if existing:
+        return blog_schemas.BlogTagResponse(tag_id=0, name=tag_data.name)
+    
+    return blog_schemas.BlogTagResponse(tag_id=0, name=tag_data.name)
+
+
+# ============== Blog Endpoints ==============
 
 
 @router.post("", response_model=blog_schemas.BlogResponse, status_code=status.HTTP_201_CREATED)
@@ -173,30 +264,21 @@ async def create_blog(
     Create a new blog post with file upload.
 
     **Content-Type:** `multipart/form-data`
-
-    **Form fields:**
-    - **title**: Blog post title (required, 1-200 characters)
-    - **content_file**: Markdown or HTML file (required, max 5MB)
-    - **content_type**: Content format (markdown or html, default: markdown)
-    - **is_published**: Whether to publish immediately (default: true)
-    - **tags**: Comma-separated list of tags (optional)
     """
-    # Validate content file type
     if not content_file.filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Content file is required"
         )
     
-    # Parse tags
+    # Parse tags from comma-separated string
     tag_list = None
     if tags:
         tag_list = [t.strip() for t in tags.split(",") if t.strip()]
 
-    # Parse is_published from string to bool
+    # Parse is_published
     published = str(is_published).lower() in ("true", "1", "yes", "on")
 
-    # Create blog data
     blog_data = blog_schemas.BlogCreate(
         title=title,
         content_type=blog_schemas.ContentTypeEnum(content_type),
@@ -211,24 +293,25 @@ async def create_blog(
         content_file=content_file,
     )
 
+    # blog is now a dict, no lazy loading issues
     return blog_schemas.BlogResponse(
-        blog_id=blog.blog_id,
-        user_id=blog.user_id,
-        title=blog.title,
-        content_file_path=blog.content_file_path,
-        content_type=blog.content_type,
-        is_published=blog.is_published,
-        view_count=blog.view_count,
-        like_count=blog.like_count,
-        comment_count=blog.comment_count,
-        created_at=blog.created_at,
-        updated_at=blog.updated_at,
+        blog_id=blog["blog_id"],
+        user_id=blog["user_id"],
+        title=blog["title"],
+        content_file_path=blog["content_file_path"],
+        content_type=blog["content_type"],
+        is_published=blog["is_published"],
+        view_count=blog["view_count"],
+        like_count=blog["like_count"],
+        comment_count=blog["comment_count"],
+        created_at=blog["created_at"],
+        updated_at=blog["updated_at"],
         author=blog_schemas.BlogUserResponse(
             user_id=current_user.user_id,
             name=current_user.name,
         ),
         has_liked=False,
-        tags=[blog_schemas.BlogTagResponse(tag_id=t.tag_id, name=t.name) for t in blog.tags],
+        tags=blog["tags"],
     )
 
 
@@ -238,12 +321,7 @@ async def get_blog(
     db: AsyncSession = Depends(get_db),
     current_user: Optional[models.User] = Depends(get_current_user),
 ):
-    """
-    Get blog post details by ID.
-
-    Includes author info and whether current user has liked.
-    Increments view count on each access.
-    """
+    """Get blog post details by ID."""
     blog = await blog_service.get_blog(db, blog_id)
 
     if blog is None:
@@ -252,7 +330,6 @@ async def get_blog(
             detail="Blog post not found",
         )
 
-    # Check if user has access (published or owner)
     if not blog.is_published:
         if not current_user or blog.user_id != current_user.user_id:
             raise HTTPException(
@@ -260,17 +337,23 @@ async def get_blog(
                 detail="You don't have access to this blog post",
             )
 
-    # Increment view count
     await blog_service.increment_view_count(db, blog_id)
 
-    # Check if current user has liked
     has_liked = False
     if current_user:
         like_status = await blog_service.get_like_status(db, blog_id, current_user.user_id)
         has_liked = like_status["has_liked"]
 
-    # Refresh to get updated view count
-    await db.refresh(blog)
+    # Get author data before accessing to avoid lazy loading
+    author_data = None
+    if blog.user:
+        author_data = blog_schemas.BlogUserResponse(
+            user_id=blog.user.user_id,
+            name=blog.user.name,
+        )
+
+    # Refresh only the view_count, not relationships
+    await db.refresh(blog, attribute_names=["view_count"])
 
     return blog_schemas.BlogResponse(
         blog_id=blog.blog_id,
@@ -284,26 +367,19 @@ async def get_blog(
         comment_count=blog.comment_count,
         created_at=blog.created_at,
         updated_at=blog.updated_at,
-        author=blog_schemas.BlogUserResponse(
-            user_id=blog.user.user_id,
-            name=blog.user.name,
-        ) if blog.user else None,
+        author=author_data,
         has_liked=has_liked,
-        tags=[blog_schemas.BlogTagResponse(tag_id=t.tag_id, name=t.name) for t in blog.tags],
+        tags=tags_from_string(blog.tags),
     )
 
 
-@router.get("/{blog_id}/content", response_model=str)
+@router.get("/{blog_id}/content", response_model=blog_schemas.BlogContentResponse)
 async def get_blog_content(
     blog_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: Optional[models.User] = Depends(get_current_user),
 ):
-    """
-    Get blog post content as raw text.
-
-    Returns the markdown or HTML content from the file.
-    """
+    """Get blog post content as raw text."""
     blog = await blog_service.get_blog(db, blog_id)
 
     if blog is None:
@@ -312,7 +388,6 @@ async def get_blog_content(
             detail="Blog post not found",
         )
 
-    # Check if user has access (published or owner)
     if not blog.is_published:
         if not current_user or blog.user_id != current_user.user_id:
             raise HTTPException(
@@ -320,7 +395,6 @@ async def get_blog_content(
                 detail="You don't have access to this blog post",
             )
 
-    # Get content from file
     content = await blog_service.get_blog_content(blog, blog.user_id)
     if content is None:
         raise HTTPException(
@@ -328,7 +402,7 @@ async def get_blog_content(
             detail="Blog content file not found",
         )
 
-    return content
+    return blog_schemas.BlogContentResponse(content=content)
 
 
 @router.put("/{blog_id}", response_model=blog_schemas.BlogResponse)
@@ -342,13 +416,7 @@ async def update_blog(
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """
-    Update a blog post.
-
-    **Requires ownership.** Only the author can update their blog.
-
-    **Content-Type:** `multipart/form-data`
-    """
+    """Update a blog post. **Requires ownership.**"""
     blog = await blog_service.get_blog(db, blog_id)
 
     if blog is None:
@@ -375,7 +443,6 @@ async def update_blog(
     if content_type is not None:
         update_data["content_type"] = blog_schemas.ContentTypeEnum(content_type).value
     if is_published is not None:
-        # Parse is_published from string to bool
         update_data["is_published"] = str(is_published).lower() in ("true", "1", "yes", "on")
     if tag_list is not None:
         update_data["tags"] = tag_list
@@ -405,7 +472,7 @@ async def update_blog(
             name=current_user.name,
         ),
         has_liked=False,
-        tags=[blog_schemas.BlogTagResponse(tag_id=t.tag_id, name=t.name) for t in updated_blog.tags],
+        tags=tags_from_string(updated_blog.tags),
     )
 
 
@@ -415,11 +482,7 @@ async def delete_blog(
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """
-    Delete a blog post.
-
-    **Requires ownership.** Only the author can delete their blog.
-    """
+    """Delete a blog post. **Requires ownership.**"""
     blog = await blog_service.get_blog(db, blog_id)
 
     if blog is None:
@@ -444,14 +507,7 @@ async def like_blog(
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """
-    Toggle like for a blog post.
-
-    - If not liked: Add like
-    - If already liked: Remove like
-
-    **Requires authentication.** Cannot like own blog.
-    """
+    """Toggle like for a blog post."""
     result = await blog_service.toggle_like(
         db=db,
         blog_id=blog_id,
@@ -467,11 +523,7 @@ async def get_like_status(
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """
-    Get current user's like status for a blog post.
-
-    Returns whether user has liked and total like count.
-    """
+    """Get current user's like status for a blog post."""
     result = await blog_service.get_like_status(
         db=db,
         blog_id=blog_id,
@@ -492,12 +544,7 @@ async def list_blog_comments(
     db: AsyncSession = Depends(get_db),
     current_user: Optional[models.User] = Depends(get_current_user),
 ):
-    """
-    List all comments for a blog post with pagination.
-
-    Returns top-level comments with nested replies.
-    """
-    # Verify blog exists and is accessible
+    """List all comments for a blog post."""
     blog = await blog_service.get_blog(db, blog_id)
     if blog is None:
         raise HTTPException(
@@ -512,10 +559,8 @@ async def list_blog_comments(
                 detail="You don't have access to this blog post",
             )
 
-    # Calculate offset
     offset = (page - 1) * page_size
 
-    # Get comments
     comments, total = await blog_service.list_comments(
         db=db,
         blog_id=blog_id,
@@ -523,7 +568,6 @@ async def list_blog_comments(
         offset=offset,
     )
 
-    # Build response with nested replies
     def build_comment_response(comment: models.BlogComment) -> blog_schemas.BlogCommentResponse:
         replies = [build_comment_response(reply) for reply in comment.replies if not reply.is_deleted]
         return blog_schemas.BlogCommentResponse(
@@ -560,12 +604,7 @@ async def create_comment(
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """
-    Create a new comment on a blog post.
-
-    - **content**: Comment text (required, 1-5000 characters)
-    - **parent_id**: Parent comment ID for replies (optional)
-    """
+    """Create a new comment on a blog post."""
     comment = await blog_service.create_comment(
         db=db,
         blog_id=blog_id,
@@ -593,20 +632,16 @@ async def create_comment(
 @router.put("/comments/{comment_id}", response_model=blog_schemas.BlogCommentResponse)
 async def update_comment(
     comment_id: int,
-    content: str,
+    comment_data: blog_schemas.BlogCommentUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """
-    Update a comment.
-
-    **Requires ownership.** Only the author can edit their comment.
-    """
+    """Update a comment. **Requires ownership.**"""
     comment = await blog_service.update_comment(
         db=db,
         comment_id=comment_id,
         user_id=current_user.user_id,
-        content=content,
+        content=comment_data.content,
     )
 
     return blog_schemas.BlogCommentResponse(
@@ -632,41 +667,10 @@ async def delete_comment(
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """
-    Delete a comment (soft delete).
-
-    **Requires ownership** or **blog ownership**.
-    """
+    """Delete a comment (soft delete)."""
     await blog_service.delete_comment(
         db=db,
         comment_id=comment_id,
         user_id=current_user.user_id,
     )
     return None
-
-
-# ============== Tags Endpoints ==============
-
-
-@router.get("/tags", response_model=blog_schemas.BlogTagListResponse)
-async def list_tags(
-    search: Optional[str] = None,
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    List all available tags.
-
-    - **search**: Filter tags by name (partial match)
-    """
-    tags, total = await blog_service.list_all_tags(
-        db=db,
-        search=search,
-        limit=100,
-    )
-
-    items = [blog_schemas.BlogTagResponse(tag_id=tag.tag_id, name=tag.name) for tag in tags]
-
-    return blog_schemas.BlogTagListResponse(
-        items=items,
-        total=total,
-    )

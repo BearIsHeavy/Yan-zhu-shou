@@ -12,13 +12,6 @@ class ContentTypeEnum(str, PyEnum):
     HTML = "html"
 
 
-class BlogTagResponse(BaseModel):
-    """Tag response schema."""
-    tag_id: int
-    name: str
-    model_config = ConfigDict(from_attributes=True)
-
-
 class BlogCreate(BaseModel):
     """Schema for creating a new blog post."""
     title: str = Field(min_length=1, max_length=200, description="Blog post title")
@@ -75,7 +68,7 @@ class BlogResponse(BaseModel):
     blog_id: int
     user_id: int
     title: str
-    content_file_path: Optional[str] = None  # Relative path to content file
+    content_file_path: Optional[str] = None
     content_type: str
     is_published: bool
     view_count: int
@@ -84,8 +77,8 @@ class BlogResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     author: Optional[BlogUserResponse] = None
-    has_liked: bool = False  # Whether current user has liked
-    tags: list[BlogTagResponse] = Field(default_factory=list)
+    has_liked: bool = False
+    tags: list[str] = Field(default_factory=list)  # List of tag names
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -103,7 +96,7 @@ class BlogListItem(BaseModel):
     updated_at: datetime
     author: Optional[BlogUserResponse] = None
     has_liked: bool = False
-    tags: list[BlogTagResponse] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)  # List of tag names
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -114,6 +107,7 @@ class BlogListResponse(BaseModel):
     page: int
     page_size: int
     total_pages: int
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BlogCommentCreate(BaseModel):
@@ -163,8 +157,8 @@ class BlogStats(BaseModel):
     total_views: int
     total_likes: int
     total_comments: int
-    published_count: int
-    draft_count: int
+    my_posts: int = 0
+    my_drafts: int = 0
 
 
 class BlogSubmissionStatus(BaseModel):
@@ -173,7 +167,24 @@ class BlogSubmissionStatus(BaseModel):
     message: str
 
 
+class BlogTagResponse(BaseModel):
+    """Tag response schema."""
+    tag_id: int
+    name: str
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BlogTagCreate(BaseModel):
+    """Schema for creating a tag."""
+    name: str = Field(min_length=1, max_length=10, description="Tag name (max 10 characters)")
+
+
 class BlogTagListResponse(BaseModel):
     """Paginated tag list response."""
     items: list[BlogTagResponse]
     total: int
+
+
+class BlogContentResponse(BaseModel):
+    """Response for blog content."""
+    content: str

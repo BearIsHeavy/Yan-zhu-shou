@@ -69,7 +69,6 @@ from schemas.mistake import (
 )
 from schemas.blog import (
     ContentTypeEnum,
-    BlogTagResponse,
     BlogCreate,
     BlogUpdate,
     BlogUserResponse,
@@ -83,7 +82,10 @@ from schemas.blog import (
     BlogLikeResponse,
     BlogStats,
     BlogSubmissionStatus,
+    BlogTagResponse,
+    BlogTagCreate,
     BlogTagListResponse,
+    BlogContentResponse,
 )
 
 __all__ = [
@@ -148,7 +150,6 @@ __all__ = [
     "PracticeSessionResponse",
     # Blog
     "ContentTypeEnum",
-    "BlogTagResponse",
     "BlogCreate",
     "BlogUpdate",
     "BlogUserResponse",
@@ -162,5 +163,8 @@ __all__ = [
     "BlogLikeResponse",
     "BlogStats",
     "BlogSubmissionStatus",
+    "BlogTagResponse",
+    "BlogTagCreate",
     "BlogTagListResponse",
+    "BlogContentResponse",
 ]

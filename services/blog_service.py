@@ -6,8 +6,8 @@ from typing import Optional
 
 from fastapi import HTTPException, status, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, or_, delete
-from sqlalchemy.orm import selectinload, joinedload
+from sqlalchemy import select, func, and_, or_
+from sqlalchemy.orm import selectinload
 
 import models
 from schemas.blog import BlogCreate, BlogCommentCreate
@@ -18,47 +18,25 @@ from utils.file_storage import (
 )
 
 
-async def get_or_create_tag(db: AsyncSession, name: str) -> models.BlogTag:
-    """Get existing tag or create new one."""
-    name = name.strip()
-    result = await db.execute(
-        select(models.BlogTag).where(models.BlogTag.name == name)
-    )
-    tag = result.scalar_one_or_none()
-    if tag is None:
-        tag = models.BlogTag(name=name)
-        db.add(tag)
-        await db.flush()
-    return tag
+def tags_to_string(tags: Optional[list[str]]) -> Optional[str]:
+    """Convert tags list to comma-separated string."""
+    if not tags:
+        return None
+    return ",".join(tags)
 
 
-async def set_blog_tags(db: AsyncSession, blog: models.Blog, tag_names: Optional[list[str]]) -> None:
-    """Set tags for a blog post."""
-    # First, remove all existing tag associations
-    await db.execute(
-        delete(models.blog_tags_association).where(
-            models.blog_tags_association.c.blog_id == blog.blog_id
-        )
-    )
-    
-    if tag_names is None:
-        return
-
-    # Add new tag associations
-    for name in tag_names:
-        tag = await get_or_create_tag(db, name)
-        assoc = models.blog_tags_association.insert().values(blog_id=blog.blog_id, tag_id=tag.tag_id)
-        await db.execute(assoc)
+def tags_from_string(tags_str: Optional[str]) -> list[str]:
+    """Convert comma-separated string to tags list."""
+    if not tags_str:
+        return []
+    return [t.strip() for t in tags_str.split(",") if t.strip()]
 
 
 async def get_blog(db: AsyncSession, blog_id: int) -> Optional[models.Blog]:
-    """Get blog by ID with user info and tags."""
+    """Get blog by ID with user info."""
     result = await db.execute(
         select(models.Blog)
-        .options(
-            selectinload(models.Blog.user),
-            selectinload(models.Blog.tags)
-        )
+        .options(selectinload(models.Blog.user))
         .where(models.Blog.blog_id == blog_id)
     )
     return result.scalar_one_or_none()
@@ -69,7 +47,7 @@ async def list_blogs(
     search: Optional[str] = None,
     user_id: Optional[int] = None,
     content_type: Optional[str] = None,
-    tags: Optional[list[str]] = None,
+    tags: Optional[str] = None,
     sort_by: str = "created_at",
     limit: int = 20,
     offset: int = 0,
@@ -84,7 +62,7 @@ async def list_blogs(
         search: Search in title
         user_id: Filter by author ID
         content_type: Filter by content type (markdown, html)
-        tags: Filter by tags (blogs must have ALL specified tags)
+        tags: Filter by tags (comma-separated, blogs must have the tag)
         sort_by: Sort field (created_at, updated_at, view_count, like_count)
         limit: Page size
         offset: Page offset
@@ -94,17 +72,13 @@ async def list_blogs(
     Returns:
         tuple: (blogs list, total count)
     """
-    # Build base query with tags loaded
-    query = select(models.Blog).options(
-        selectinload(models.Blog.user),
-        selectinload(models.Blog.tags)
-    )
+    # Build base query
+    query = select(models.Blog).options(selectinload(models.Blog.user))
 
     # Filter by published status
     if not include_unpublished:
         query = query.where(models.Blog.is_published == True)
     elif current_user_id:
-        # Include user's own unpublished blogs
         query = query.where(
             or_(
                 models.Blog.is_published == True,
@@ -120,16 +94,19 @@ async def list_blogs(
     if content_type:
         query = query.where(models.Blog.content_type == content_type)
     
-    # Filter by tags (blogs must have ALL specified tags)
+    # Filter by tags (using LIKE for comma-separated storage)
     if tags:
-        tag_subquery = (
-            select(models.blog_tags_association.c.blog_id)
-            .join(models.BlogTag)
-            .where(models.BlogTag.name.in_([t.strip() for t in tags]))
-            .group_by(models.blog_tags_association.c.blog_id)
-            .having(func.count(models.blog_tags_association.c.tag_id) == len(tags))
-        )
-        query = query.where(models.Blog.blog_id.in_(tag_subquery))
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+        if tag_list:
+            # Build LIKE conditions for each tag
+            tag_conditions = []
+            for tag in tag_list:
+                # Match tag at start, middle, or end of comma-separated list
+                tag_conditions.append(models.Blog.tags.ilike(f"{tag},%"))
+                tag_conditions.append(models.Blog.tags.ilike(f"%,{tag},%"))
+                tag_conditions.append(models.Blog.tags.ilike(f"%,{tag}"))
+                tag_conditions.append(models.Blog.tags == tag)
+            query = query.where(or_(*tag_conditions))
 
     # Get total count
     count_query = select(func.count()).select_from(models.Blog)
@@ -148,15 +125,6 @@ async def list_blogs(
         count_query = count_query.where(models.Blog.user_id == user_id)
     if content_type:
         count_query = count_query.where(models.Blog.content_type == content_type)
-    if tags:
-        tag_count_subquery = (
-            select(models.blog_tags_association.c.blog_id)
-            .join(models.BlogTag)
-            .where(models.BlogTag.name.in_([t.strip() for t in tags]))
-            .group_by(models.blog_tags_association.c.blog_id)
-            .having(func.count(models.blog_tags_association.c.tag_id) == len(tags))
-        )
-        count_query = count_query.where(models.Blog.blog_id.in_(tag_count_subquery))
 
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
@@ -168,7 +136,7 @@ async def list_blogs(
         query = query.order_by(models.Blog.like_count.desc())
     elif sort_by == "updated_at":
         query = query.order_by(models.Blog.updated_at.desc())
-    else:  # Default: created_at
+    else:
         query = query.order_by(models.Blog.created_at.desc())
 
     # Apply pagination
@@ -185,20 +153,20 @@ async def create_blog(
     user_id: int,
     blog_data: BlogCreate,
     content_file: Optional[UploadFile] = None,
-) -> models.Blog:
-    """Create a new blog post with optional content file."""
+) -> dict:
+    """Create a new blog post with optional content file. Returns dict."""
     blog = models.Blog(
         user_id=user_id,
         title=blog_data.title,
-        content_file_path=None,  # Will be set after file upload
+        content_file_path=None,
         content_type=blog_data.content_type.value,
         is_published=blog_data.is_published,
+        tags=tags_to_string(blog_data.tags),
     )
 
     db.add(blog)
     await db.flush()
-    await db.refresh(blog)
-
+    
     # Save content file if provided
     if content_file:
         file_content = await content_file.read()
@@ -210,25 +178,24 @@ async def create_blog(
             user_id=user_id,
         )
         blog.content_file_path = file_path
-        await db.flush()
 
-    # Set tags if provided
-    if blog_data.tags is not None:
-        await set_blog_tags(db, blog, blog_data.tags)
-        await db.flush()
-
-    # Explicitly load tags using selectinload to avoid lazy loading
-    await db.refresh(blog, attribute_names=["tags"])
+    await db.refresh(blog)
     
-    # Ensure tags are loaded by re-querying with selectinload
-    result = await db.execute(
-        select(models.Blog)
-        .options(selectinload(models.Blog.tags))
-        .where(models.Blog.blog_id == blog.blog_id)
-    )
-    blog = result.scalar_one_or_none()
-
-    return blog
+    # Convert to dict to avoid lazy loading issues
+    return {
+        "blog_id": blog.blog_id,
+        "user_id": blog.user_id,
+        "title": blog.title,
+        "content_file_path": blog.content_file_path,
+        "content_type": blog.content_type,
+        "is_published": blog.is_published,
+        "view_count": blog.view_count,
+        "like_count": blog.like_count,
+        "comment_count": blog.comment_count,
+        "created_at": blog.created_at,
+        "updated_at": blog.updated_at,
+        "tags": tags_from_string(blog.tags),
+    }
 
 
 async def update_blog(
@@ -240,19 +207,6 @@ async def update_blog(
 ) -> models.Blog:
     """
     Update a blog post.
-
-    Args:
-        db: Database session
-        blog_id: Blog ID
-        blog_update: Dict of fields to update
-        content_file: Optional new content file
-        user_id: User ID for file operations
-
-    Returns:
-        Updated blog
-
-    Raises:
-        HTTPException: If blog not found
     """
     blog = await get_blog(db, blog_id)
     if blog is None:
@@ -261,19 +215,15 @@ async def update_blog(
             detail="Blog post not found",
         )
 
-    # Handle tags separately
-    tags = blog_update.pop("tags", None)
-    if tags is not None:
-        await set_blog_tags(db, blog, tags)
-        await db.flush()
+    # Handle tags - convert list to comma-separated string
+    if "tags" in blog_update:
+        blog_update["tags"] = tags_to_string(blog_update["tags"])
 
     # Handle content file upload
     if content_file and user_id:
-        # Delete old file if exists
         if blog.content_file_path:
             delete_blog_content(user_id, blog.content_file_path)
-
-        # Save new file
+        
         file_content = await content_file.read()
         original_filename = content_file.filename or "blog.md"
         file_path = save_blog_content(
@@ -289,35 +239,13 @@ async def update_blog(
             setattr(blog, field, value)
 
     await db.flush()
-
-    # Explicitly load tags using selectinload to avoid lazy loading
-    await db.execute(
-        select(models.Blog)
-        .options(selectinload(models.Blog.tags))
-        .where(models.Blog.blog_id == blog.blog_id)
-    )
-    # Re-query to get fully loaded blog
-    result = await db.execute(
-        select(models.Blog)
-        .options(selectinload(models.Blog.tags))
-        .where(models.Blog.blog_id == blog_id)
-    )
-    blog = result.scalar_one_or_none()
+    await db.refresh(blog)
 
     return blog
 
 
 async def get_blog_content(blog: models.Blog, user_id: int) -> Optional[str]:
-    """
-    Get blog content from file.
-
-    Args:
-        blog: Blog instance
-        user_id: User ID for file access
-
-    Returns:
-        Blog content as string or None
-    """
+    """Get blog content from file."""
     if not blog.content_file_path:
         return None
     return read_blog_content(user_id, blog.content_file_path)
@@ -328,20 +256,7 @@ async def delete_blog(
     blog_id: int,
     user_id: Optional[int] = None,
 ) -> bool:
-    """
-    Delete a blog post.
-
-    Args:
-        db: Database session
-        blog_id: Blog ID
-        user_id: User ID for file deletion
-
-    Returns:
-        True if deleted
-
-    Raises:
-        HTTPException: If blog not found
-    """
+    """Delete a blog post."""
     blog = await get_blog(db, blog_id)
     if blog is None:
         raise HTTPException(
@@ -349,7 +264,6 @@ async def delete_blog(
             detail="Blog post not found",
         )
 
-    # Delete content file if exists
     if blog.content_file_path and user_id:
         delete_blog_content(user_id, blog.content_file_path)
 
@@ -393,21 +307,7 @@ async def toggle_like(
     blog_id: int,
     user_id: int,
 ) -> dict:
-    """
-    Toggle like for a blog (like if not liked, remove if already liked).
-
-    Args:
-        db: Database session
-        blog_id: Blog ID
-        user_id: User ID
-
-    Returns:
-        dict: {has_liked: bool, like_count: int}
-
-    Raises:
-        HTTPException: If blog not found or user liking own blog
-    """
-    # Get blog
+    """Toggle like for a blog."""
     blog = await get_blog(db, blog_id)
     if blog is None:
         raise HTTPException(
@@ -415,23 +315,19 @@ async def toggle_like(
             detail="Blog post not found",
         )
 
-    # Check if user is trying to like their own blog
     if blog.user_id == user_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="You cannot like your own blog post",
         )
 
-    # Check existing like
     existing_like = await get_user_like(db, blog_id, user_id)
 
     if existing_like:
-        # Remove like (toggle off)
         await db.delete(existing_like)
         blog.like_count = max(0, blog.like_count - 1)
         has_liked = False
     else:
-        # Add like (toggle on)
         like = models.BlogLike(
             blog_id=blog_id,
             user_id=user_id,
@@ -454,17 +350,7 @@ async def get_like_status(
     blog_id: int,
     user_id: int,
 ) -> dict:
-    """
-    Get like status for a blog.
-
-    Args:
-        db: Database session
-        blog_id: Blog ID
-        user_id: User ID
-
-    Returns:
-        dict: {has_liked: bool, like_count: int}
-    """
+    """Get like status for a blog."""
     blog = await get_blog(db, blog_id)
     if blog is None:
         return {"has_liked": False, "like_count": 0}
@@ -494,19 +380,7 @@ async def list_comments(
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[models.BlogComment], int]:
-    """
-    List comments for a blog with pagination.
-
-    Args:
-        db: Database session
-        blog_id: Blog ID
-        limit: Page size
-        offset: Page offset
-
-    Returns:
-        tuple: (comments list, total count)
-    """
-    # Get total count (excluding deleted)
+    """List comments for a blog with pagination."""
     count_result = await db.execute(
         select(func.count())
         .select_from(models.BlogComment)
@@ -519,7 +393,6 @@ async def list_comments(
     )
     total = count_result.scalar() or 0
 
-    # Get comments (top-level only, excluding deleted)
     result = await db.execute(
         select(models.BlogComment)
         .options(selectinload(models.BlogComment.user))
@@ -536,7 +409,6 @@ async def list_comments(
     )
     comments = result.scalars().all()
 
-    # Load replies for each comment
     for comment in comments:
         await db.refresh(comment, attribute_names=["replies"])
 
@@ -549,22 +421,7 @@ async def create_comment(
     user_id: int,
     comment_data: BlogCommentCreate,
 ) -> models.BlogComment:
-    """
-    Create a new comment.
-
-    Args:
-        db: Database session
-        blog_id: Blog ID
-        user_id: User ID
-        comment_data: Comment data
-
-    Returns:
-        Created comment
-
-    Raises:
-        HTTPException: If blog not found or parent comment not found
-    """
-    # Verify blog exists
+    """Create a new comment."""
     blog = await get_blog(db, blog_id)
     if blog is None:
         raise HTTPException(
@@ -572,7 +429,6 @@ async def create_comment(
             detail="Blog post not found",
         )
 
-    # Verify parent comment if provided
     parent_comment = None
     if comment_data.parent_id:
         parent_comment = await get_comment(db, comment_data.parent_id)
@@ -582,7 +438,6 @@ async def create_comment(
                 detail="Parent comment not found",
             )
 
-    # Create comment
     comment = models.BlogComment(
         blog_id=blog_id,
         user_id=user_id,
@@ -594,7 +449,6 @@ async def create_comment(
     await db.flush()
     await db.refresh(comment)
 
-    # Increment blog comment count
     blog.comment_count += 1
     await db.flush()
 
@@ -607,21 +461,7 @@ async def update_comment(
     user_id: int,
     content: str,
 ) -> models.BlogComment:
-    """
-    Update a comment.
-
-    Args:
-        db: Database session
-        comment_id: Comment ID
-        user_id: User ID (for ownership check)
-        content: New content
-
-    Returns:
-        Updated comment
-
-    Raises:
-        HTTPException: If comment not found or user is not author
-    """
+    """Update a comment."""
     comment = await get_comment(db, comment_id)
     if comment is None:
         raise HTTPException(
@@ -647,20 +487,7 @@ async def delete_comment(
     comment_id: int,
     user_id: int,
 ) -> bool:
-    """
-    Delete a comment (soft delete).
-
-    Args:
-        db: Database session
-        comment_id: Comment ID
-        user_id: User ID (for ownership check)
-
-    Returns:
-        True if deleted
-
-    Raises:
-        HTTPException: If comment not found or insufficient permissions
-    """
+    """Delete a comment (soft delete)."""
     comment = await get_comment(db, comment_id)
     if comment is None:
         raise HTTPException(
@@ -668,7 +495,6 @@ async def delete_comment(
             detail="Comment not found",
         )
 
-    # Check if user is author or blog owner
     blog = await get_blog(db, comment.blog_id)
     is_author = comment.user_id == user_id
     is_blog_owner = blog.user_id == user_id if blog else False
@@ -679,12 +505,10 @@ async def delete_comment(
             detail="You can only delete your own comments",
         )
 
-    # Soft delete
     comment.is_deleted = True
     comment.content = "[Deleted]"
     await db.flush()
 
-    # Decrement blog comment count
     blog.comment_count = max(0, blog.comment_count - 1)
     await db.flush()
 
@@ -692,24 +516,12 @@ async def delete_comment(
 
 
 async def get_blog_stats(db: AsyncSession, user_id: Optional[int] = None) -> dict:
-    """
-    Get blog statistics.
-
-    Args:
-        db: Database session
-        user_id: Optional user ID for personal stats
-
-    Returns:
-        dict: Blog statistics
-    """
+    """Get blog statistics."""
     if user_id:
-        # Personal stats
         base_filter = models.Blog.user_id == user_id
     else:
-        # Global stats
         base_filter = True
 
-    # Total posts
     total_result = await db.execute(
         select(func.count())
         .select_from(models.Blog)
@@ -717,7 +529,6 @@ async def get_blog_stats(db: AsyncSession, user_id: Optional[int] = None) -> dic
     )
     total_posts = total_result.scalar() or 0
 
-    # Published count
     published_result = await db.execute(
         select(func.count())
         .select_from(models.Blog)
@@ -725,10 +536,8 @@ async def get_blog_stats(db: AsyncSession, user_id: Optional[int] = None) -> dic
     )
     published_count = published_result.scalar() or 0
 
-    # Draft count
     draft_count = total_posts - published_count
 
-    # Total views
     views_result = await db.execute(
         select(func.coalesce(func.sum(models.Blog.view_count), 0))
         .select_from(models.Blog)
@@ -736,7 +545,6 @@ async def get_blog_stats(db: AsyncSession, user_id: Optional[int] = None) -> dic
     )
     total_views = views_result.scalar() or 0
 
-    # Total likes
     likes_result = await db.execute(
         select(func.coalesce(func.sum(models.Blog.like_count), 0))
         .select_from(models.Blog)
@@ -744,7 +552,6 @@ async def get_blog_stats(db: AsyncSession, user_id: Optional[int] = None) -> dic
     )
     total_likes = likes_result.scalar() or 0
 
-    # Total comments
     comments_result = await db.execute(
         select(func.coalesce(func.sum(models.Blog.comment_count), 0))
         .select_from(models.Blog)
@@ -762,41 +569,6 @@ async def get_blog_stats(db: AsyncSession, user_id: Optional[int] = None) -> dic
     }
 
 
-async def list_all_tags(
-    db: AsyncSession,
-    search: Optional[str] = None,
-    limit: int = 100,
-) -> tuple[list[models.BlogTag], int]:
-    """
-    List all tags with optional search.
-
-    Args:
-        db: Database session
-        search: Search in tag name
-        limit: Maximum number of tags to return
-
-    Returns:
-        tuple: (tags list, total count)
-    """
-    # Get total count
-    count_query = select(func.count()).select_from(models.BlogTag)
-    if search:
-        count_query = count_query.where(models.BlogTag.name.ilike(f"%{search}%"))
-    total_result = await db.execute(count_query)
-    total = total_result.scalar() or 0
-
-    # Get tags
-    query = select(models.BlogTag).order_by(models.BlogTag.name)
-    if search:
-        query = query.where(models.BlogTag.name.ilike(f"%{search}%"))
-    query = query.limit(limit)
-
-    result = await db.execute(query)
-    tags = result.scalars().all()
-
-    return list(tags), total
-
-
 async def get_user_blog_submissions(
     db: AsyncSession,
     user_id: int,
@@ -804,7 +576,6 @@ async def get_user_blog_submissions(
     offset: int = 0,
 ) -> tuple[list[models.Blog], int]:
     """Get all blog submissions by a user."""
-    # Get total count
     count_result = await db.execute(
         select(func.count())
         .select_from(models.Blog)
@@ -812,7 +583,6 @@ async def get_user_blog_submissions(
     )
     total = count_result.scalar() or 0
 
-    # Get blogs
     result = await db.execute(
         select(models.Blog)
         .where(models.Blog.user_id == user_id)
