@@ -256,7 +256,7 @@ async def create_blog(
     content_type: str = Form(default="markdown"),
     is_published: str = Form(default="true"),
     tags: Optional[str] = Form(default=None),
-    content_file: UploadFile = File(...),
+    content_file: UploadFile = File(..., description="Markdown or HTML content file (max 5MB)"),
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -265,12 +265,28 @@ async def create_blog(
 
     **Content-Type:** `multipart/form-data`
     """
-    if not content_file.filename:
+    # Validate file
+    if not content_file or not content_file.filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Content file is required"
         )
     
+    # Read and validate file content
+    file_content = await content_file.read()
+    if not file_content or len(file_content) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Content file cannot be empty"
+        )
+    
+    # Create a new UploadFile with the content for passing to service
+    from io import BytesIO
+    content_file_for_service = UploadFile(
+        filename=content_file.filename,
+        file=BytesIO(file_content),
+    )
+
     # Parse tags from comma-separated string
     tag_list = None
     if tags:
@@ -285,12 +301,12 @@ async def create_blog(
         is_published=published,
         tags=tag_list,
     )
-    
+
     blog = await blog_service.create_blog(
         db=db,
         user_id=current_user.user_id,
         blog_data=blog_data,
-        content_file=content_file,
+        content_file=content_file_for_service,
     )
 
     # blog is now a dict, no lazy loading issues
