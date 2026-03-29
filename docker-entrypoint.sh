@@ -8,17 +8,19 @@ echo "⏳ Waiting for PostgreSQL..."
 while ! python -c "
 import asyncio
 from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy import text
 engine = create_async_engine('${DATABASE_URL:-postgresql+asyncpg://api:api@postgres:5432/fastapi_db}')
 async def check():
     try:
         async with engine.connect() as conn:
-            await conn.execute('SELECT 1')
+            await conn.execute(text('SELECT 1'))
             await engine.dispose()
             return True
-    except:
+    except Exception as e:
+        print(f'PostgreSQL check failed: {e}')
         return False
 exit(0 if asyncio.run(check()) else 1)
-" 2>/dev/null; do
+" 2>&1; do
     sleep 2
 done
 echo "✅ PostgreSQL is ready"
@@ -34,19 +36,14 @@ async def check():
         await r.ping()
         await r.close()
         return True
-    except:
+    except Exception as e:
+        print(f'Redis check failed: {e}')
         return False
 exit(0 if asyncio.run(check()) else 1)
-" 2>/dev/null; do
+" 2>&1; do
     sleep 2
 done
 echo "✅ Redis is ready"
-
-# Run database migrations if script exists
-if [ -f "db_scripts/init_db.py" ]; then
-    echo "📦 Running database initialization..."
-    python db_scripts/init_db.py || echo "⚠️  Database initialization skipped (may already be initialized)"
-fi
 
 echo "✅ All dependencies ready"
 

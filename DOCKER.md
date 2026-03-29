@@ -49,8 +49,11 @@ docker-compose build
 # Start all services
 docker-compose up -d
 
-# Initialize database
-docker-compose exec app python db_scripts/init_db.py
+# Initialize database (manual step)
+docker-compose exec -T app python db_scripts/init_db.py
+
+# Or using make
+make db-init
 
 # View logs
 docker-compose logs -f
@@ -58,6 +61,8 @@ docker-compose logs -f
 # Stop services
 docker-compose down
 ```
+
+**Note**: Database initialization is a manual step. Run `make db-init` after starting services for the first time.
 
 ## 🏗️ Architecture
 
@@ -97,6 +102,18 @@ Data is persisted in Docker volumes:
 | `uploads_data` | User uploads (blogs, bios) | `/app/uploads` |
 
 ## 🔧 Configuration
+
+### Chinese Mirror Support
+
+Dockerfile 已配置使用阿里云 PyPI 镜像，加快中国大陆地区的包下载速度：
+
+```dockerfile
+# 使用阿里云镜像
+RUN uv pip install --system --index-url https://mirrors.aliyun.com/pypi/simple/ ...
+```
+
+**镜像源：**
+- 阿里云 PyPI 镜像：`https://mirrors.aliyun.com/pypi/simple/`
 
 ### Environment Variables
 

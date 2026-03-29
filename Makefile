@@ -15,12 +15,14 @@ help:
 	@echo "Commands:"
 	@echo "  build       Build Docker images"
 	@echo "  up          Start all services (detached)"
+	@echo "  up-dev      Start all services (foreground, for debugging)"
 	@echo "  down        Stop and remove all containers"
 	@echo "  restart     Restart all services"
 	@echo "  logs        View logs (follow mode)"
 	@echo "  logs-app    View only application logs"
+	@echo "  logs-db     View only database logs"
 	@echo "  shell       Open shell in application container"
-	@echo "  db-init     Initialize database tables"
+	@echo "  db-init     Manually initialize database tables"
 	@echo "  db-reset    Drop and recreate all database tables (WARNING: destroys data)"
 	@echo "  clean       Remove containers, images, and volumes"
 	@echo "  test        Run tests in container"
@@ -66,9 +68,9 @@ logs-redis:
 shell:
 	docker-compose exec app /bin/bash
 
-# Initialize database tables
+# Initialize database tables (manual)
 db-init:
-	docker-compose exec app python db_scripts/init_db.py
+	docker-compose exec -T app python db_scripts/init_db.py
 
 # Reset database (WARNING: destroys all data)
 db-reset:

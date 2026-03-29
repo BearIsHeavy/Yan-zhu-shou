@@ -1,12 +1,17 @@
 # Multi-stage Dockerfile for YanZhuShou FastAPI Application
 # Optimized for production: small image size, security, and caching
+# Uses Chinese mirror for faster package downloads in China
 
 # ==============================================================================
 # Stage 1: Build dependencies
 # ==============================================================================
-FROM python:3.12-slim as builder
+FROM python:3.12-slim AS builder
 
 WORKDIR /app
+
+# Configure pip to use Chinese mirror (Aliyun)
+RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ && \
+    pip config set global.trusted-host mirrors.aliyun.com
 
 # Install uv for faster dependency installation
 RUN pip install --no-cache-dir uv
@@ -14,15 +19,13 @@ RUN pip install --no-cache-dir uv
 # Copy pyproject.toml and uv.lock for dependency installation
 COPY pyproject.toml uv.lock ./
 
-# Install Python dependencies to user directory using uv
-RUN uv pip install --system -r pyproject.toml && \
-    mkdir -p /root/.local && \
-    cp -r /usr/local/lib/python3.12/site-packages /root/.local/ || true
+# Install Python dependencies using uv with Chinese mirror
+RUN uv pip install --system --index-url https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com -r pyproject.toml
 
 # ==============================================================================
 # Stage 2: Runtime image
 # ==============================================================================
-FROM python:3.12-slim as runtime
+FROM python:3.12-slim AS runtime
 
 # Create non-root user for security
 RUN groupadd --gid 1000 appgroup && \
@@ -33,7 +36,9 @@ WORKDIR /app
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
+    PIP_TRUSTED_HOST=mirrors.aliyun.com
 
 # Copy installed packages from builder stage
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
