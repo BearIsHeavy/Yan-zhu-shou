@@ -8,6 +8,19 @@ Complete guide for deploying YanZhuShou with Docker.
 - Docker Compose 2.0+
 - Make (optional, for convenience commands)
 
+## 📦 Project Structure
+
+```
+Server/
+├── Dockerfile              # Multi-stage Docker build
+├── docker-compose.yml      # Service orchestration
+├── .dockerignore          # Docker build exclusions
+├── docker-entrypoint.sh   # Container startup script
+├── pyproject.toml         # Python dependencies
+├── uv.lock               # Locked dependencies
+└── ...
+```
+
 ## 🚀 Quick Start
 
 ### Option 1: Using Make (Recommended)

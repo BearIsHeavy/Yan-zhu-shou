@@ -8,16 +8,16 @@ FROM python:3.12-slim as builder
 
 WORKDIR /app
 
-# Install build dependencies for compiling Python packages
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
+# Install uv for faster dependency installation
+RUN pip install --no-cache-dir uv
 
-# Copy requirements first for better Docker layer caching
-COPY requirements.txt .
+# Copy pyproject.toml and uv.lock for dependency installation
+COPY pyproject.toml uv.lock ./
 
-# Install Python dependencies to user directory
-RUN pip install --no-cache-dir --user -r requirements.txt
+# Install Python dependencies to user directory using uv
+RUN uv pip install --system -r pyproject.toml && \
+    mkdir -p /root/.local && \
+    cp -r /usr/local/lib/python3.12/site-packages /root/.local/ || true
 
 # ==============================================================================
 # Stage 2: Runtime image
@@ -30,14 +30,14 @@ RUN groupadd --gid 1000 appgroup && \
 
 WORKDIR /app
 
-# Copy installed packages from builder stage
-COPY --from=builder /root/.local /home/appuser/.local
-
 # Set environment variables
-ENV PATH=/home/appuser/.local/bin:$PATH \
-    PYTHONUNBUFFERED=1 \
+ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
+
+# Copy installed packages from builder stage
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Create uploads directory for user-generated content (blogs, bios)
 RUN mkdir -p /app/uploads/blogs /app/uploads/bios && \

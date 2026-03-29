@@ -43,14 +43,12 @@ ENV/
 env/
 .conda/
 
-# Package managers
-uv.lock
+# Package managers (keep pyproject.toml and uv.lock for Docker build)
 poetry.lock
 Pipfile
 Pipfile.lock
 setup.cfg
 setup.py
-pyproject.toml
 
 # Testing
 .pytest_cache/
@@ -59,7 +57,7 @@ htmlcov/
 .tox/
 .nox/
 
-# Documentation
+# Documentation (keep README)
 docs/
 
 # Logs
@@ -76,7 +74,7 @@ logs/
 *.sqlite
 *.sqlite3
 
-# Uploads (user-generated content)
+# Uploads (user-generated content - mounted as volume)
 uploads/
 
 # Temporary files
@@ -94,15 +92,10 @@ temp/
 ehthumbs.db
 Thumbs.db
 
-# Docker
-Dockerfile
-docker-compose.yml
+# Docker Compose override files (keep main docker-compose.yml)
+docker-compose.override.yml
 docker-compose.*.yml
-.dockerignore
-docker-entrypoint.sh
-
-# Makefile
-Makefile
+!docker-compose.yml
 
 # Test files
 test_api/
@@ -110,6 +103,6 @@ tests/
 *_test.py
 test_*.py
 
-# Markdown files
+# Markdown files (keep README)
 *.md
 !README.md
