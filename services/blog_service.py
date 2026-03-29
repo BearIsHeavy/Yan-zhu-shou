@@ -88,7 +88,14 @@ async def list_blogs(
 
     # Apply filters
     if search:
-        query = query.where(models.Blog.title.ilike(f"%{search}%"))
+        # Search in title OR tags (fuzzy match)
+        search_pattern = f"%{search}%"
+        query = query.where(
+            or_(
+                models.Blog.title.ilike(search_pattern),
+                models.Blog.tags.ilike(search_pattern),
+            )
+        )
     if user_id:
         query = query.where(models.Blog.user_id == user_id)
     if content_type:
@@ -120,7 +127,14 @@ async def list_blogs(
             )
         )
     if search:
-        count_query = count_query.where(models.Blog.title.ilike(f"%{search}%"))
+        # Search in title OR tags (fuzzy match)
+        search_pattern = f"%{search}%"
+        count_query = count_query.where(
+            or_(
+                models.Blog.title.ilike(search_pattern),
+                models.Blog.tags.ilike(search_pattern),
+            )
+        )
     if user_id:
         count_query = count_query.where(models.Blog.user_id == user_id)
     if content_type:
@@ -233,9 +247,11 @@ async def update_blog(
             user_id=user_id,
         )
         blog.content_file_path = file_path
+        # print(f"===============================================================blog {blog.content_file_path}")
 
     for field, value in blog_update.items():
         if value is not None:
+            # print(f"===============================================================blog {blog}, field: {field}, value:{value}")
             setattr(blog, field, value)
 
     await db.flush()

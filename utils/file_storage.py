@@ -245,9 +245,9 @@ def save_blog_content(
     with open(file_path, 'wb') as f:
         f.write(file_content)
 
-    # Return relative path
-    relative_path = file_path.relative_to(UPLOAD_DIR)
-    return str(Path("uploads") / relative_path)
+    # Return relative path from project root
+    relative_path = file_path.relative_to(UPLOAD_DIR.parent)
+    return str(relative_path)
 
 
 def get_blog_content_file_path(user_id: int, file_path: str) -> Optional[Path]:
@@ -256,7 +256,7 @@ def get_blog_content_file_path(user_id: int, file_path: str) -> Optional[Path]:
 
     Args:
         user_id: User ID
-        file_path: Relative path stored in database
+        file_path: Relative path from project root (e.g., 'uploads/blogs/40/blog_1.md')
 
     Returns:
         Absolute file path or None if file doesn't exist
@@ -264,6 +264,7 @@ def get_blog_content_file_path(user_id: int, file_path: str) -> Optional[Path]:
     if not file_path:
         return None
 
+    # file_path is already relative to project root
     abs_path = UPLOAD_DIR.parent / file_path
 
     # Security check: ensure file is within upload directory
