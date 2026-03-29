@@ -1,6 +1,6 @@
 """Pydantic schemas for blog API."""
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 from typing import Optional
 from datetime import datetime
 from enum import Enum as PyEnum
@@ -12,20 +12,55 @@ class ContentTypeEnum(str, PyEnum):
     HTML = "html"
 
 
+class BlogTagResponse(BaseModel):
+    """Tag response schema."""
+    tag_id: int
+    name: str
+    model_config = ConfigDict(from_attributes=True)
+
+
 class BlogCreate(BaseModel):
     """Schema for creating a new blog post."""
     title: str = Field(min_length=1, max_length=200, description="Blog post title")
-    content: str = Field(min_length=1, max_length=50000, description="Blog content (HTML or Markdown)")
     content_type: ContentTypeEnum = Field(default=ContentTypeEnum.MARKDOWN, description="Content format")
     is_published: bool = Field(default=True, description="Whether to publish immediately")
+    tags: Optional[list[str]] = Field(default=None, description="List of tags (max 5, each max 10 chars)")
+
+    @field_validator("tags")
+    @classmethod
+    def validate_tags(cls, v: Optional[list[str]]) -> Optional[list[str]]:
+        if v is None:
+            return v
+        if len(v) > 5:
+            raise ValueError("Maximum 5 tags allowed")
+        for tag in v:
+            if len(tag) > 10:
+                raise ValueError("Each tag must be at most 10 characters")
+            if not tag.strip():
+                raise ValueError("Tags cannot be empty or whitespace only")
+        return v
 
 
 class BlogUpdate(BaseModel):
     """Schema for updating a blog post."""
     title: Optional[str] = Field(default=None, min_length=1, max_length=200)
-    content: Optional[str] = Field(default=None, min_length=1, max_length=50000)
     content_type: Optional[ContentTypeEnum] = None
     is_published: Optional[bool] = None
+    tags: Optional[list[str]] = Field(default=None, description="List of tags (max 5, each max 10 chars)")
+
+    @field_validator("tags")
+    @classmethod
+    def validate_tags(cls, v: Optional[list[str]]) -> Optional[list[str]]:
+        if v is None:
+            return v
+        if len(v) > 5:
+            raise ValueError("Maximum 5 tags allowed")
+        for tag in v:
+            if len(tag) > 10:
+                raise ValueError("Each tag must be at most 10 characters")
+            if not tag.strip():
+                raise ValueError("Tags cannot be empty or whitespace only")
+        return v
 
 
 class BlogUserResponse(BaseModel):
@@ -40,7 +75,7 @@ class BlogResponse(BaseModel):
     blog_id: int
     user_id: int
     title: str
-    content: str
+    content_file_path: Optional[str] = None  # Relative path to content file
     content_type: str
     is_published: bool
     view_count: int
@@ -50,6 +85,7 @@ class BlogResponse(BaseModel):
     updated_at: datetime
     author: Optional[BlogUserResponse] = None
     has_liked: bool = False  # Whether current user has liked
+    tags: list[BlogTagResponse] = Field(default_factory=list)
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -67,6 +103,7 @@ class BlogListItem(BaseModel):
     updated_at: datetime
     author: Optional[BlogUserResponse] = None
     has_liked: bool = False
+    tags: list[BlogTagResponse] = Field(default_factory=list)
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -134,3 +171,9 @@ class BlogSubmissionStatus(BaseModel):
     """Response for checking submission limits."""
     can_submit: bool
     message: str
+
+
+class BlogTagListResponse(BaseModel):
+    """Paginated tag list response."""
+    items: list[BlogTagResponse]
+    total: int

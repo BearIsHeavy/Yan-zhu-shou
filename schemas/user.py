@@ -31,6 +31,7 @@ class UserResponse(UserBase):
     name: str
     phone: Optional[str] = None
     gender: int = 0
+    bio_file_path: Optional[str] = None  # Relative path to self-introduction markdown file
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
 
@@ -38,3 +39,11 @@ class UserResponse(UserBase):
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+
+
+class BioFileResponse(BaseModel):
+    """Response for bio file operations."""
+    file_path: str
+    file_name: str
+    uploaded_at: datetime
+    model_config = ConfigDict(from_attributes=True)

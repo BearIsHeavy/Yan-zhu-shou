@@ -4,20 +4,61 @@ import math
 from datetime import datetime
 from typing import Optional
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, or_
-from sqlalchemy.orm import selectinload
+from sqlalchemy import select, func, and_, or_, delete
+from sqlalchemy.orm import selectinload, joinedload
 
 import models
 from schemas.blog import BlogCreate, BlogCommentCreate
+from utils.file_storage import (
+    save_blog_content,
+    read_blog_content,
+    delete_blog_content,
+)
+
+
+async def get_or_create_tag(db: AsyncSession, name: str) -> models.BlogTag:
+    """Get existing tag or create new one."""
+    name = name.strip()
+    result = await db.execute(
+        select(models.BlogTag).where(models.BlogTag.name == name)
+    )
+    tag = result.scalar_one_or_none()
+    if tag is None:
+        tag = models.BlogTag(name=name)
+        db.add(tag)
+        await db.flush()
+    return tag
+
+
+async def set_blog_tags(db: AsyncSession, blog: models.Blog, tag_names: Optional[list[str]]) -> None:
+    """Set tags for a blog post."""
+    # First, remove all existing tag associations
+    await db.execute(
+        delete(models.blog_tags_association).where(
+            models.blog_tags_association.c.blog_id == blog.blog_id
+        )
+    )
+    
+    if tag_names is None:
+        return
+
+    # Add new tag associations
+    for name in tag_names:
+        tag = await get_or_create_tag(db, name)
+        assoc = models.blog_tags_association.insert().values(blog_id=blog.blog_id, tag_id=tag.tag_id)
+        await db.execute(assoc)
 
 
 async def get_blog(db: AsyncSession, blog_id: int) -> Optional[models.Blog]:
-    """Get blog by ID with user info."""
+    """Get blog by ID with user info and tags."""
     result = await db.execute(
         select(models.Blog)
-        .options(selectinload(models.Blog.user))
+        .options(
+            selectinload(models.Blog.user),
+            selectinload(models.Blog.tags)
+        )
         .where(models.Blog.blog_id == blog_id)
     )
     return result.scalar_one_or_none()
@@ -28,6 +69,7 @@ async def list_blogs(
     search: Optional[str] = None,
     user_id: Optional[int] = None,
     content_type: Optional[str] = None,
+    tags: Optional[list[str]] = None,
     sort_by: str = "created_at",
     limit: int = 20,
     offset: int = 0,
@@ -42,6 +84,7 @@ async def list_blogs(
         search: Search in title
         user_id: Filter by author ID
         content_type: Filter by content type (markdown, html)
+        tags: Filter by tags (blogs must have ALL specified tags)
         sort_by: Sort field (created_at, updated_at, view_count, like_count)
         limit: Page size
         offset: Page offset
@@ -51,8 +94,11 @@ async def list_blogs(
     Returns:
         tuple: (blogs list, total count)
     """
-    # Build base query
-    query = select(models.Blog).options(selectinload(models.Blog.user))
+    # Build base query with tags loaded
+    query = select(models.Blog).options(
+        selectinload(models.Blog.user),
+        selectinload(models.Blog.tags)
+    )
 
     # Filter by published status
     if not include_unpublished:
@@ -73,6 +119,17 @@ async def list_blogs(
         query = query.where(models.Blog.user_id == user_id)
     if content_type:
         query = query.where(models.Blog.content_type == content_type)
+    
+    # Filter by tags (blogs must have ALL specified tags)
+    if tags:
+        tag_subquery = (
+            select(models.blog_tags_association.c.blog_id)
+            .join(models.BlogTag)
+            .where(models.BlogTag.name.in_([t.strip() for t in tags]))
+            .group_by(models.blog_tags_association.c.blog_id)
+            .having(func.count(models.blog_tags_association.c.tag_id) == len(tags))
+        )
+        query = query.where(models.Blog.blog_id.in_(tag_subquery))
 
     # Get total count
     count_query = select(func.count()).select_from(models.Blog)
@@ -91,6 +148,15 @@ async def list_blogs(
         count_query = count_query.where(models.Blog.user_id == user_id)
     if content_type:
         count_query = count_query.where(models.Blog.content_type == content_type)
+    if tags:
+        tag_count_subquery = (
+            select(models.blog_tags_association.c.blog_id)
+            .join(models.BlogTag)
+            .where(models.BlogTag.name.in_([t.strip() for t in tags]))
+            .group_by(models.blog_tags_association.c.blog_id)
+            .having(func.count(models.blog_tags_association.c.tag_id) == len(tags))
+        )
+        count_query = count_query.where(models.Blog.blog_id.in_(tag_count_subquery))
 
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
@@ -118,12 +184,13 @@ async def create_blog(
     db: AsyncSession,
     user_id: int,
     blog_data: BlogCreate,
+    content_file: Optional[UploadFile] = None,
 ) -> models.Blog:
-    """Create a new blog post."""
+    """Create a new blog post with optional content file."""
     blog = models.Blog(
         user_id=user_id,
         title=blog_data.title,
-        content=blog_data.content,
+        content_file_path=None,  # Will be set after file upload
         content_type=blog_data.content_type.value,
         is_published=blog_data.is_published,
     )
@@ -132,6 +199,35 @@ async def create_blog(
     await db.flush()
     await db.refresh(blog)
 
+    # Save content file if provided
+    if content_file:
+        file_content = await content_file.read()
+        original_filename = content_file.filename or "blog.md"
+        file_path = save_blog_content(
+            file_content=file_content,
+            blog_id=blog.blog_id,
+            original_filename=original_filename,
+            user_id=user_id,
+        )
+        blog.content_file_path = file_path
+        await db.flush()
+
+    # Set tags if provided
+    if blog_data.tags is not None:
+        await set_blog_tags(db, blog, blog_data.tags)
+        await db.flush()
+
+    # Explicitly load tags using selectinload to avoid lazy loading
+    await db.refresh(blog, attribute_names=["tags"])
+    
+    # Ensure tags are loaded by re-querying with selectinload
+    result = await db.execute(
+        select(models.Blog)
+        .options(selectinload(models.Blog.tags))
+        .where(models.Blog.blog_id == blog.blog_id)
+    )
+    blog = result.scalar_one_or_none()
+
     return blog
 
 
@@ -139,6 +235,8 @@ async def update_blog(
     db: AsyncSession,
     blog_id: int,
     blog_update: dict,
+    content_file: Optional[UploadFile] = None,
+    user_id: Optional[int] = None,
 ) -> models.Blog:
     """
     Update a blog post.
@@ -147,6 +245,8 @@ async def update_blog(
         db: Database session
         blog_id: Blog ID
         blog_update: Dict of fields to update
+        content_file: Optional new content file
+        user_id: User ID for file operations
 
     Returns:
         Updated blog
@@ -161,19 +261,72 @@ async def update_blog(
             detail="Blog post not found",
         )
 
+    # Handle tags separately
+    tags = blog_update.pop("tags", None)
+    if tags is not None:
+        await set_blog_tags(db, blog, tags)
+        await db.flush()
+
+    # Handle content file upload
+    if content_file and user_id:
+        # Delete old file if exists
+        if blog.content_file_path:
+            delete_blog_content(user_id, blog.content_file_path)
+
+        # Save new file
+        file_content = await content_file.read()
+        original_filename = content_file.filename or "blog.md"
+        file_path = save_blog_content(
+            file_content=file_content,
+            blog_id=blog_id,
+            original_filename=original_filename,
+            user_id=user_id,
+        )
+        blog.content_file_path = file_path
+
     for field, value in blog_update.items():
         if value is not None:
             setattr(blog, field, value)
 
     await db.flush()
-    await db.refresh(blog)
+
+    # Explicitly load tags using selectinload to avoid lazy loading
+    await db.execute(
+        select(models.Blog)
+        .options(selectinload(models.Blog.tags))
+        .where(models.Blog.blog_id == blog.blog_id)
+    )
+    # Re-query to get fully loaded blog
+    result = await db.execute(
+        select(models.Blog)
+        .options(selectinload(models.Blog.tags))
+        .where(models.Blog.blog_id == blog_id)
+    )
+    blog = result.scalar_one_or_none()
 
     return blog
+
+
+async def get_blog_content(blog: models.Blog, user_id: int) -> Optional[str]:
+    """
+    Get blog content from file.
+
+    Args:
+        blog: Blog instance
+        user_id: User ID for file access
+
+    Returns:
+        Blog content as string or None
+    """
+    if not blog.content_file_path:
+        return None
+    return read_blog_content(user_id, blog.content_file_path)
 
 
 async def delete_blog(
     db: AsyncSession,
     blog_id: int,
+    user_id: Optional[int] = None,
 ) -> bool:
     """
     Delete a blog post.
@@ -181,6 +334,7 @@ async def delete_blog(
     Args:
         db: Database session
         blog_id: Blog ID
+        user_id: User ID for file deletion
 
     Returns:
         True if deleted
@@ -194,6 +348,10 @@ async def delete_blog(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Blog post not found",
         )
+
+    # Delete content file if exists
+    if blog.content_file_path and user_id:
+        delete_blog_content(user_id, blog.content_file_path)
 
     await db.delete(blog)
     await db.flush()
@@ -602,6 +760,41 @@ async def get_blog_stats(db: AsyncSession, user_id: Optional[int] = None) -> dic
         "published_count": published_count,
         "draft_count": draft_count,
     }
+
+
+async def list_all_tags(
+    db: AsyncSession,
+    search: Optional[str] = None,
+    limit: int = 100,
+) -> tuple[list[models.BlogTag], int]:
+    """
+    List all tags with optional search.
+
+    Args:
+        db: Database session
+        search: Search in tag name
+        limit: Maximum number of tags to return
+
+    Returns:
+        tuple: (tags list, total count)
+    """
+    # Get total count
+    count_query = select(func.count()).select_from(models.BlogTag)
+    if search:
+        count_query = count_query.where(models.BlogTag.name.ilike(f"%{search}%"))
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    # Get tags
+    query = select(models.BlogTag).order_by(models.BlogTag.name)
+    if search:
+        query = query.where(models.BlogTag.name.ilike(f"%{search}%"))
+    query = query.limit(limit)
+
+    result = await db.execute(query)
+    tags = result.scalars().all()
+
+    return list(tags), total
 
 
 async def get_user_blog_submissions(

@@ -13,6 +13,7 @@ class User(Base):
     hash_password = Column(String(255), nullable=False)
     phone = Column(String(20), unique=True)
     gender = Column(SmallInteger, default=0)  # 0:Unknown 1:Male 2:Female
+    bio_file_path = Column(String(255))  # Relative path to self-introduction markdown file
     created_at = Column(DateTime, server_default=func.now())
 
     # Relationships

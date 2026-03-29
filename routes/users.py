@@ -1,8 +1,9 @@
 import json
 from datetime import timedelta
 from typing import Optional
+from pathlib import Path
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, UploadFile, File
 from fastapi.routing import APIRouter
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +15,7 @@ import models
 import schemas
 from dependencies import get_current_user
 from database import get_db, get_redis
+from utils.file_storage import save_bio_file, read_bio_file, delete_bio_file
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="users/login")
 
@@ -174,3 +176,141 @@ async def update_current_user(
     await redis.delete(cache_key)
 
     return current_user
+
+
+# ============== Self-Introduction (Bio File) Endpoints ==============
+
+
+@router.post("/bio", response_model=schemas.BioFileResponse, status_code=status.HTTP_201_CREATED)
+async def upload_bio(
+    file: UploadFile = File(..., description="Markdown file for self-introduction"),
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """
+    Upload a self-introduction markdown file.
+
+    **Requirements:**
+    - File must be in Markdown format (.md or .markdown)
+    - Maximum file size: 1MB
+
+    Replaces existing bio file if one already exists.
+    """
+    # Validate file type
+    if not file.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No file provided",
+        )
+
+    # Read file content
+    content = await file.read()
+
+    # Save file and get relative path
+    file_path = save_bio_file(
+        file_content=content,
+        original_filename=file.filename,
+        user_id=current_user.user_id,
+    )
+
+    # Delete old bio file if exists
+    if current_user.bio_file_path:
+        delete_bio_file(current_user.user_id, current_user.bio_file_path)
+
+    # Update user record with new file path
+    result = await db.execute(select(models.User).where(models.User.user_id == current_user.user_id))
+    user = result.scalar_one_or_none()
+    if user:
+        user.bio_file_path = file_path
+        await db.flush()
+
+    return schemas.BioFileResponse(
+        file_path=file_path,
+        file_name=file.filename,
+        uploaded_at=user.created_at if user else current_user.created_at,
+    )
+
+
+@router.get("/bio", response_model=str)
+async def get_bio(
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """
+    Get the current user's self-introduction markdown content.
+
+    Returns the raw markdown content as plain text.
+    """
+    if not current_user.bio_file_path:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No self-introduction uploaded yet",
+        )
+
+    content = read_bio_file(current_user.user_id, current_user.bio_file_path)
+    if content is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bio file not found on server",
+        )
+
+    return content
+
+
+@router.get("/bio/{user_id}", response_model=str)
+async def get_user_bio(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """
+    Get another user's self-introduction markdown content.
+
+    Returns the raw markdown content as plain text.
+    """
+    result = await db.execute(select(models.User).where(models.User.user_id == user_id))
+    user = result.scalar_one_or_none()
+
+    if user is None or not user.bio_file_path:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User has not uploaded a self-introduction",
+        )
+
+    content = read_bio_file(user.user_id, user.bio_file_path)
+    if content is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bio file not found on server",
+        )
+
+    return content
+
+
+@router.delete("/bio", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_bio(
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """
+    Delete the current user's self-introduction file.
+
+    Removes both the file from storage and the reference from the database.
+    """
+    if not current_user.bio_file_path:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No self-introduction to delete",
+        )
+
+    # Delete file from storage
+    delete_bio_file(current_user.user_id, current_user.bio_file_path)
+
+    # Update user record
+    result = await db.execute(select(models.User).where(models.User.user_id == current_user.user_id))
+    user = result.scalar_one_or_none()
+    if user:
+        user.bio_file_path = None
+        await db.flush()
+
+    return None

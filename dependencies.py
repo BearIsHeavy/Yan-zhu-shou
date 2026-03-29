@@ -11,7 +11,7 @@ import models
 from database import get_db, get_redis
 from routes import auth
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/users/login")
 
 
 async def get_current_user(

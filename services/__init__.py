@@ -33,6 +33,10 @@ from services.blog_service import (
     delete_comment,
     get_blog_stats,
     get_user_blog_submissions,
+    list_all_tags,
+    get_or_create_tag,
+    set_blog_tags,
+    get_blog_content,
 )
 
 __all__ = [
@@ -67,4 +71,8 @@ __all__ = [
     "delete_comment",
     "get_blog_stats",
     "get_user_blog_submissions",
+    "list_all_tags",
+    "get_or_create_tag",
+    "set_blog_tags",
+    "get_blog_content",
 ]
