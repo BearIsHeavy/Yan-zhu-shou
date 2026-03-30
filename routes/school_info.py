@@ -258,41 +258,55 @@ async def get_cities(
 
 @router.get("/filters/schools")
 async def get_schools(
-    city: Optional[str] = Query(None, description="Filter by city"),
+    city: Optional[str] = Query(None, description="Filter by city (optional)"),
+    college_name: Optional[str] = Query(None, description="Filter by college name (optional)"),
+    major_name: Optional[str] = Query(None, description="Filter by major name (optional)"),
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """Get list of available school names for filtering"""
-    
+    """Get list of available school names for filtering (no required dependencies)"""
+
     query = select(models.SchoolInfo.school_name).distinct()
-    
+
+    # Apply optional filters
     if city:
         query = query.where(models.SchoolInfo.city == city)
-    
+    if college_name:
+        query = query.where(models.SchoolInfo.college_name.ilike(f"%{college_name}%"))
+    if major_name:
+        query = query.where(models.SchoolInfo.major_name.ilike(f"%{major_name}%"))
+
     query = query.order_by(models.SchoolInfo.school_name)
-    
+
     result = await db.execute(query)
     schools = [row[0] for row in result.fetchall()]
-    
+
     return {"schools": schools}
 
 
 @router.get("/filters/majors")
 async def get_majors(
-    school_name: Optional[str] = Query(None, description="Filter by school name"),
+    city: Optional[str] = Query(None, description="Filter by city (optional)"),
+    school_name: Optional[str] = Query(None, description="Filter by school name (optional)"),
+    college_name: Optional[str] = Query(None, description="Filter by college name (optional)"),
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """Get list of available major names for filtering"""
-    
+    """Get list of available major names for filtering (no required dependencies)"""
+
     query = select(models.SchoolInfo.major_name).distinct()
-    
+
+    # Apply optional filters
+    if city:
+        query = query.where(models.SchoolInfo.city == city)
     if school_name:
         query = query.where(models.SchoolInfo.school_name.ilike(f"%{school_name}%"))
-    
+    if college_name:
+        query = query.where(models.SchoolInfo.college_name.ilike(f"%{college_name}%"))
+
     query = query.order_by(models.SchoolInfo.major_name)
-    
+
     result = await db.execute(query)
     majors = [row[0] for row in result.fetchall()]
-    
+
     return {"majors": majors}
