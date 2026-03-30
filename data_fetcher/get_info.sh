@@ -35,6 +35,7 @@ get_raw_curl() {
     # 1. The -b '...' cookie value
     # 2. The --data-raw line (keep ${start} and ${PAGE_SIZE} variables)
 
+    # -- CURL_START --
     curl 'https://yz.chsi.com.cn/sytj/stu/tjyxqexxcx.action' \
       -H 'Accept: application/json, text/plain, */*' \
       -H 'Accept-Language: en-US,en;q=0.9' \
@@ -52,7 +53,8 @@ get_raw_curl() {
       -H 'X-Requested-With: XMLHttpRequest' \
       -H 'sec-ch-ua: "Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"' \
       -H 'sec-ch-ua-mobile: ?0' \
-      -H 'sec-ch-ua-platform: "macOS"' \
+      -H 'sec-ch-ua-platform: "macOS"'
+    # -- CURL_END --
       --data-raw "mhcx=1&orderBy=&ssdm2=&mldm2=yjxk&xxfs2=1&zxjh2=0&dwmc2=&fhbktj=1&start=${start}&pageSize=${PAGE_SIZE}" \
       -s -o "${output_file}" -w "%{http_code}"
 }

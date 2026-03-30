@@ -1,15 +1,133 @@
 """School Info API - Simple sorting and filtering"""
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, asc, desc
 from typing import Optional, List
+import subprocess
+import os
+import re
 
 import models
 from schemas import school_info as schemas
 from dependencies import get_db, get_current_user
 
 router = APIRouter(prefix="/school-info", tags=["SchoolInfo"])
+
+
+def update_curl_in_script(curl_command: str) -> bool:
+    """
+    Update curl command in get_info.sh script
+    
+    Args:
+        curl_command: The curl command from frontend (without --data-raw and -s -o lines)
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    try:
+        script_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "data_fetcher",
+            "get_info.sh"
+        )
+        
+        # Read the script
+        with open(script_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Find and replace curl command between markers
+        import re
+        pattern = r'(# -- CURL_START --\n)(.*?)(\n    # -- CURL_END --)'
+        
+        # Ensure curl command ends with proper format (no trailing backslash)
+        curl_cmd = curl_command.rstrip().rstrip('\\').rstrip()
+        
+        replacement = r'\1' + curl_cmd + r'\3'
+        
+        new_content = re.sub(pattern, replacement, content, flags=re.DOTALL)
+        
+        # Write back
+        with open(script_path, 'w', encoding='utf-8') as f:
+            f.write(new_content)
+        
+        return True
+    except Exception as e:
+        print(f"Error updating script: {e}")
+        return False
+
+
+async def fetch_and_process_data(mode: str, pages: int):
+    """Background task to fetch and process data"""
+    try:
+        script_dir = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "data_fetcher"
+        )
+        
+        # Step 1: Run get_info.sh
+        get_script = os.path.join(script_dir, "get_info.sh")
+        result = subprocess.run(
+            ["bash", get_script, mode, str(pages)],
+            capture_output=True,
+            text=True,
+            cwd=script_dir
+        )
+        
+        if result.returncode != 0:
+            print(f"Fetch failed: {result.stderr}")
+            return
+        
+        # Step 2: Run process_data.py
+        process_script = os.path.join(script_dir, "process_data.py")
+        result = subprocess.run(
+            ["python", process_script, "Info"],
+            capture_output=True,
+            text=True,
+            cwd=script_dir
+        )
+        
+        if result.returncode != 0:
+            print(f"Process failed: {result.stderr}")
+        else:
+            print(f"Data processing completed: {result.stdout}")
+            
+    except Exception as e:
+        print(f"Error in background task: {e}")
+
+
+@router.post("/fetch", response_model=schemas.FetchTaskResponse)
+async def fetch_data(
+    request: schemas.FetchTaskCreate,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """
+    Fetch school data from CHSI
+    
+    - **curl_command**: Curl command from browser DevTools
+    - **mode**: "single" or "all"
+    - **pages**: Number of pages to fetch (when mode="all")
+    - **page_num**: Page number (when mode="single")
+    """
+    
+    # Update curl command in script
+    if not update_curl_in_script(request.curl_command):
+        raise HTTPException(status_code=500, detail="Failed to update curl command")
+    
+    # Determine mode and pages
+    mode = request.mode
+    pages = request.pages if request.mode == "all" else (request.page_num or 0)
+    
+    # Add background task
+    background_tasks.add_task(fetch_and_process_data, mode, pages)
+    
+    return schemas.FetchTaskResponse(
+        task_id=0,
+        status="pending",
+        message=f"Started fetching data (mode={mode}, pages={pages}). This runs in background."
+    )
 
 
 @router.get("/schools", response_model=schemas.SchoolInfoListResponse)
