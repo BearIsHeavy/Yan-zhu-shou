@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """
-CHSI Data Processor
+CHSI Data Processor - Simple Version
+
+This script processes university admission data from JSON files and stores
+them in a PostgreSQL database. It handles:
+1. Database and table creation if they don't exist
+2. JSON data parsing and transformation
+3. Batch insertion with duplicate handling
 
 Usage:
     python process_data.py [directory]
@@ -73,13 +79,6 @@ class SchoolInfo(Base):
     adjustment_count: Mapped[int] = mapped_column(Integer)
     create_time: Mapped[datetime] = mapped_column(DateTime)
     remarks: Mapped[str] = mapped_column(Text, nullable=True)
-    
-    # Progress tracking
-    cutoff_score: Mapped[str] = mapped_column(String(20), nullable=True)
-    contact_phone: Mapped[str] = mapped_column(String(50), nullable=True)
-    supervisor_name: Mapped[str] = mapped_column(String(100), nullable=True)
-    supervisor_contact: Mapped[str] = mapped_column(String(100), nullable=True)
-    email_status: Mapped[int] = mapped_column(Integer, default=0)
 
 
 # =============================================================================
@@ -116,7 +115,7 @@ async def insert_batch_data(rows: List[List[Any]]) -> Tuple[int, int, int]:
                 result = await session.execute(stmt)
                 existing = result.scalar_one_or_none()
 
-                # Parse create_time for both new and existing records
+                # Parse create_time
                 new_create_time = datetime.strptime(row[12], "%Y-%m-%d %H:%M:%S")
 
                 if existing:
@@ -143,8 +142,7 @@ async def insert_batch_data(rows: List[List[Any]]) -> Tuple[int, int, int]:
                         direction_code=row[9], direction_name=row[10],
                         adjustment_count=row[11],
                         create_time=new_create_time,
-                        remarks=row[13],
-                        email_status=0
+                        remarks=row[13]
                     )
                     session.add(new_entry)
                     await session.commit()

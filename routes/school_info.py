@@ -134,25 +134,29 @@ async def fetch_data(
 async def list_schools(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    
+
     # Filters
     city: Optional[str] = Query(None, description="Filter by city"),
     school_name: Optional[str] = Query(None, description="Search school name"),
     college_name: Optional[str] = Query(None, description="Search college name"),
     major_name: Optional[str] = Query(None, description="Search major name"),
-    
+
     # Sorting
     sort_by: str = Query("school_name", description="Sort field"),
     order: str = Query("asc", description="Sort order: asc, desc"),
-    
+
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """Get school list with sorting and filtering"""
-    
-    # Build query
-    query = select(models.SchoolInfo)
-    
+    """Get school list with sorting and filtering (user-specific)"""
+
+    # Build query: JOIN user_school_mapping to filter by user
+    query = (
+        select(models.SchoolInfo)
+        .join(models.UserSchoolMapping, models.SchoolInfo.id == models.UserSchoolMapping.school_id)
+        .where(models.UserSchoolMapping.user_id == current_user.user_id)
+    )
+
     # Apply filters
     if city:
         query = query.where(models.SchoolInfo.city == city)
@@ -162,28 +166,38 @@ async def list_schools(
         query = query.where(models.SchoolInfo.college_name.ilike(f"%{college_name}%"))
     if major_name:
         query = query.where(models.SchoolInfo.major_name.ilike(f"%{major_name}%"))
-    
-    # Get total count
-    total_result = await db.execute(
-        select(func.count()).select_from(models.SchoolInfo)
+
+    # Get total count with same JOIN
+    count_query = select(func.count()).select_from(
+        select(models.SchoolInfo)
+        .join(models.UserSchoolMapping, models.SchoolInfo.id == models.UserSchoolMapping.school_id)
+        .where(models.UserSchoolMapping.user_id == current_user.user_id)
     )
-    total = total_result.scalar() or 0
     
+    # Apply filters to count
+    if city:
+        count_query = count_query.where(models.SchoolInfo.city == city)
+    if school_name:
+        count_query = count_query.where(models.SchoolInfo.school_name.ilike(f"%{school_name}%"))
+
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
     # Apply sorting
     sort_field = getattr(models.SchoolInfo, sort_by, models.SchoolInfo.school_name)
     if order.lower() == "desc":
         query = query.order_by(desc(sort_field))
     else:
         query = query.order_by(asc(sort_field))
-    
+
     # Apply pagination
     offset = (page - 1) * page_size
     query = query.offset(offset).limit(page_size)
-    
+
     # Execute query
     result = await db.execute(query)
     schools = result.scalars().all()
-    
+
     return schemas.SchoolInfoListResponse(
         items=schools,
         total=total,
@@ -199,16 +213,22 @@ async def get_school(
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """Get school details by ID"""
-    
+    """Get school details by ID (user-specific)"""
+
+    # Query with user check
     result = await db.execute(
-        select(models.SchoolInfo).where(models.SchoolInfo.id == school_id)
+        select(models.SchoolInfo)
+        .join(models.UserSchoolMapping, models.SchoolInfo.id == models.UserSchoolMapping.school_id)
+        .where(
+            models.SchoolInfo.id == school_id,
+            models.UserSchoolMapping.user_id == current_user.user_id
+        )
     )
     school = result.scalar_one_or_none()
-    
+
     if not school:
         raise HTTPException(status_code=404, detail="School not found")
-    
+
     return school
 
 
@@ -246,13 +266,16 @@ async def get_cities(
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """Get list of available cities for filtering"""
-    
+    """Get list of available cities for filtering (user-specific)"""
+
     result = await db.execute(
-        select(models.SchoolInfo.city).distinct().order_by(models.SchoolInfo.city)
+        select(models.SchoolInfo.city).distinct()
+        .join(models.UserSchoolMapping, models.SchoolInfo.id == models.UserSchoolMapping.school_id)
+        .where(models.UserSchoolMapping.user_id == current_user.user_id)
+        .order_by(models.SchoolInfo.city)
     )
     cities = [row[0] for row in result.fetchall()]
-    
+
     return {"cities": cities}
 
 
@@ -264,9 +287,13 @@ async def get_schools(
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """Get list of available school names for filtering (no required dependencies)"""
+    """Get list of available school names for filtering (user-specific, no required dependencies)"""
 
     query = select(models.SchoolInfo.school_name).distinct()
+
+    # Base JOIN with user filter
+    query = query.join(models.UserSchoolMapping, models.SchoolInfo.id == models.UserSchoolMapping.school_id)
+    query = query.where(models.UserSchoolMapping.user_id == current_user.user_id)
 
     # Apply optional filters
     if city:
@@ -292,9 +319,13 @@ async def get_majors(
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """Get list of available major names for filtering (no required dependencies)"""
+    """Get list of available major names for filtering (user-specific, no required dependencies)"""
 
     query = select(models.SchoolInfo.major_name).distinct()
+
+    # Base JOIN with user filter
+    query = query.join(models.UserSchoolMapping, models.SchoolInfo.id == models.UserSchoolMapping.school_id)
+    query = query.where(models.UserSchoolMapping.user_id == current_user.user_id)
 
     # Apply optional filters
     if city:
