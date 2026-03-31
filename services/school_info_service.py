@@ -90,6 +90,25 @@ class SchoolInfo(Base):
 # Helper Functions
 # =============================================================================
 
+# Global log file path
+_log_file_path = None
+
+def set_log_file(path: str):
+    """Set log file path for output"""
+    global _log_file_path
+    _log_file_path = path
+
+def log_message(message: str):
+    """Print message and write to log file if set"""
+    print(message)
+    if _log_file_path:
+        try:
+            with open(_log_file_path, "a", encoding="utf-8") as f:
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                f.write(f"[{timestamp}] {message}\n")
+        except Exception:
+            pass  # Ignore log file errors
+
 def convert_city_code_to_name(code: str) -> Tuple[str, int]:
     place = 2 if code in SPECIAL_REGION_CODES else 1
     city_name = CITY_MAP.get(code, "未知")
@@ -104,7 +123,7 @@ async def init_db() -> None:
     """Create tables if they don't exist."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    print("✓ Database tables initialized.")
+    log_message("✓ Database tables initialized.")
 
 
 async def insert_batch_data(rows: List[List[Any]], user_id: int) -> Tuple[int, int, int]:
@@ -250,49 +269,55 @@ def process_data(all_data: List[Dict[str, Any]]) -> List[List[Any]]:
 
 async def process_school_data(
     json_directory: str = "Info",
-    user_id: int = 1
+    user_id: int = 1,
+    log_file: str = None
 ) -> Tuple[int, int, int]:
     """
     Main entry point for school data processing.
-    
+
     Args:
         json_directory: Directory containing JSON files
         user_id: User ID for creating user-school mappings
-        
+        log_file: Optional log file path
+
     Returns:
         Tuple of (inserted, updated, skipped) counts
     """
-    print("=" * 60)
-    print("CHSI Data Processor")
-    print("=" * 60)
+    # Set log file if provided
+    if log_file:
+        set_log_file(log_file)
     
+    log_message("=" * 60)
+    log_message("CHSI Data Processor")
+    log_message("=" * 60)
+
     # Initialize database
-    print("\n[1/3] Initializing database...")
+    log_message("\n[1/3] Initializing database...")
     await init_db()
-    
+
     # Load data
-    print(f"\n[2/3] Loading data from '{json_directory}/'...")
+    log_message(f"\n[2/3] Loading data from '{json_directory}/'...")
     all_data = load_all_json_files(json_directory)
-    
+
     if not all_data:
-        print("✗ No data to process. Exiting.")
+        log_message("✗ No data to process. Exiting.")
         return 0, 0, 0
-    
-    print(f"\n✓ Total records: {len(all_data)}")
-    
+
+    log_message(f"\n✓ Total records: {len(all_data)}")
+
     # Process and insert
-    print("\n[3/3] Processing and inserting data...")
+    log_message("\n[3/3] Processing and inserting data...")
     store_data = process_data(all_data)
     inserted, updated, skipped = await insert_batch_data(store_data, user_id)
 
-    print("\n" + "=" * 60)
-    print("Processing Complete!")
-    print(f"  - Total:     {len(store_data)}")
-    print(f"  - Inserted:  {inserted}")
-    print(f"  - Updated:   {updated}")
-    print(f"  - Unchanged: {skipped}")
-    print("=" * 60)
-    
+    log_message("\n" + "=" * 60)
+    log_message("Processing Complete!")
+    log_message(f"  - Total:     {len(store_data)}")
+    log_message(f"  - Inserted:  {inserted}")
+    log_message(f"  - Updated:   {updated}")
+    log_message(f"  - Unchanged: {skipped}")
+    log_message("=" * 60)
+
     return inserted, updated, skipped
 
 

@@ -33,7 +33,7 @@ def log_to_file(user_id: int, message: str):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     log_file = os.path.join(LOG_DIR, f"user_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
     
-    # Find or create latest log file
+    # Find or create latest log file (within 5 minutes)
     import glob
     pattern = os.path.join(LOG_DIR, f"user_{user_id}_*.log")
     existing_logs = glob.glob(pattern)
@@ -41,9 +41,14 @@ def log_to_file(user_id: int, message: str):
     if existing_logs:
         # Use the most recent log file (within 5 minutes)
         latest_log = max(existing_logs)
-        log_file = latest_log
-    else:
-        log_file = os.path.join(LOG_DIR, f"user_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+        try:
+            # Check if log is within 5 minutes
+            log_time = datetime.strptime(latest_log.split('_')[-1].replace('.log', ''), '%Y%m%d_%H%M%S')
+            if (datetime.now() - log_time).total_seconds() < 300:
+                log_file = latest_log
+        except (ValueError, IndexError):
+            # If parsing fails, use current timestamp
+            pass
     
     with open(log_file, "a", encoding="utf-8") as f:
         f.write(f"[{timestamp}] {message}\n")
@@ -140,9 +145,16 @@ async def fetch_and_process_data(user_id: int, mode: str, pages: int, curl_comma
         # Step 2: Process data using service layer
         log_to_file(user_id, f"Step 2: 执行 process_school_data user_id={user_id}")
         
+        # Use absolute path to Info directory
+        info_dir = os.path.join(script_dir, "Info")
+        
+        # Create log file for this processing run
+        process_log_file = os.path.join(LOG_DIR, f"user_{user_id}_process_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+        
         inserted, updated, skipped = await process_school_data(
-            json_directory="Info",
-            user_id=user_id
+            json_directory=info_dir,
+            user_id=user_id,
+            log_file=process_log_file  # Pass log file path
         )
         
         log_to_file(user_id, f"✓ process_school_data 完成")
