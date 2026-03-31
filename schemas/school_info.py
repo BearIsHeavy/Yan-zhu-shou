@@ -63,13 +63,20 @@ class SchoolInfoListResponse(BaseModel):
 class FetchTaskCreate(BaseModel):
     """Fetch task request"""
     curl_command: str = Field(..., description="Curl command from browser")
-    mode: str = Field(default="single", description="single or all")
+    mode: str = Field(default="all", description="single or all")
     pages: int = Field(default=10, description="Number of pages (mode=all)")
     page_num: Optional[int] = Field(default=None, description="Page number (mode=single)")
 
 
 class FetchTaskResponse(BaseModel):
     """Fetch task response"""
-    success: bool
+    status: str  # pending/running/success/failed
     message: str
-    fetched_count: int
+
+
+class FetchTaskStatus(BaseModel):
+    """Fetch task status response"""
+    status: str  # none/pending/running/success/failed
+    error: Optional[str] = None
+    message: Optional[str] = None
+    fetched_count: int = 0
