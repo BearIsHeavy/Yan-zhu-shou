@@ -36,6 +36,9 @@ from services.blog_service import (
     tags_to_string,
     tags_from_string,
 )
+from services.school_info_service import (
+    process_school_data,
+)
 
 __all__ = [
     # Feedback
@@ -71,4 +74,6 @@ __all__ = [
     "get_user_blog_submissions",
     "tags_to_string",
     "tags_from_string",
+    # School Info
+    "process_school_data",
 ]
