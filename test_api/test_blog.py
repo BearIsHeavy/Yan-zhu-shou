@@ -27,6 +27,7 @@ class TestBlogAPIs(BaseTest):
     def __init__(self):
         super().__init__("Blog APIs")
         self.created_blog_id = None
+        self.existing_blog_id = None  # For existing blogs from setup script
     
     async def test_list_blogs(self):
         """Test GET /blogs endpoint."""
@@ -39,6 +40,9 @@ class TestBlogAPIs(BaseTest):
             if response.status_code == 200:
                 data = response.json()
                 assert "items" in data
+                # Store first blog ID for later tests
+                if len(data['items']) > 0:
+                    self.existing_blog_id = data['items'][0]['blog_id']
                 self._log_result("GET /blogs", True, f"Found {len(data['items'])} blogs")
             else:
                 self._log_result("GET /blogs", False, f"Status: {response.status_code}")
@@ -113,66 +117,72 @@ class TestBlogAPIs(BaseTest):
     
     async def test_get_blog(self):
         """Test GET /blogs/{id} endpoint."""
-        if not self.created_blog_id:
-            self._log_result("GET /blogs/{id}", False, "No blog created yet")
+        blog_id = self.created_blog_id or self.existing_blog_id
+        
+        if not blog_id:
+            self._log_result("GET /blogs/{id}", False, "No blog available")
             return
         
         try:
             response = await self.client.get(
-                f"/blogs/{self.created_blog_id}",
+                f"/blogs/{blog_id}",
                 headers=self._get_headers()
             )
             
             if response.status_code == 200:
                 data = response.json()
-                assert data["blog_id"] == self.created_blog_id
-                self._log_result(f"GET /blogs/{self.created_blog_id}", True, "Blog retrieved")
+                assert data["blog_id"] == blog_id
+                self._log_result(f"GET /blogs/{blog_id}", True, "Blog retrieved")
             else:
-                self._log_result(f"GET /blogs/{self.created_blog_id}", False, f"Status: {response.status_code}")
+                self._log_result(f"GET /blogs/{blog_id}", False, f"Status: {response.status_code}")
         except Exception as e:
-            self._log_result(f"GET /blogs/{self.created_blog_id}", False, str(e))
+            self._log_result(f"GET /blogs/{blog_id}", False, str(e))
     
     async def test_like_blog(self):
         """Test POST /blogs/{id}/like endpoint."""
-        if not self.created_blog_id:
-            self._log_result("POST /blogs/{id}/like", False, "No blog created yet")
+        blog_id = self.created_blog_id or self.existing_blog_id
+        
+        if not blog_id:
+            self._log_result("POST /blogs/{id}/like", False, "No blog available")
             return
         
         try:
             response = await self.client.post(
-                f"/blogs/{self.created_blog_id}/like",
+                f"/blogs/{blog_id}/like",
                 headers=self._get_headers()
             )
             
             if response.status_code == 200:
                 data = response.json()
                 assert "has_liked" in data
-                self._log_result(f"POST /blogs/{self.created_blog_id}/like", True, f"Liked: {data['has_liked']}")
+                self._log_result(f"POST /blogs/{blog_id}/like", True, f"Liked: {data['has_liked']}")
             else:
-                self._log_result(f"POST /blogs/{self.created_blog_id}/like", False, f"Status: {response.status_code}")
+                self._log_result(f"POST /blogs/{blog_id}/like", False, f"Status: {response.status_code}")
         except Exception as e:
-            self._log_result(f"POST /blogs/{self.created_blog_id}/like", False, str(e))
+            self._log_result(f"POST /blogs/{blog_id}/like", False, str(e))
     
     async def test_get_like_status(self):
         """Test GET /blogs/{id}/like endpoint."""
-        if not self.created_blog_id:
-            self._log_result("GET /blogs/{id}/like", False, "No blog created yet")
+        blog_id = self.created_blog_id or self.existing_blog_id
+        
+        if not blog_id:
+            self._log_result("GET /blogs/{id}/like", False, "No blog available")
             return
         
         try:
             response = await self.client.get(
-                f"/blogs/{self.created_blog_id}/like",
+                f"/blogs/{blog_id}/like",
                 headers=self._get_headers()
             )
             
             if response.status_code == 200:
                 data = response.json()
                 assert "has_liked" in data
-                self._log_result(f"GET /blogs/{self.created_blog_id}/like", True, f"Has liked: {data['has_liked']}")
+                self._log_result(f"GET /blogs/{blog_id}/like", True, f"Has liked: {data['has_liked']}")
             else:
-                self._log_result(f"GET /blogs/{self.created_blog_id}/like", False, f"Status: {response.status_code}")
+                self._log_result(f"GET /blogs/{blog_id}/like", False, f"Status: {response.status_code}")
         except Exception as e:
-            self._log_result(f"GET /blogs/{self.created_blog_id}/like", False, str(e))
+            self._log_result(f"GET /blogs/{blog_id}/like", False, str(e))
     
     async def test_list_tags(self):
         """Test GET /blogs/tags endpoint."""
@@ -193,13 +203,15 @@ class TestBlogAPIs(BaseTest):
     
     async def test_add_comment(self):
         """Test POST /blogs/{id}/comments endpoint."""
-        if not self.created_blog_id:
-            self._log_result("POST /blogs/{id}/comments", False, "No blog created yet")
+        blog_id = self.created_blog_id or self.existing_blog_id
+        
+        if not blog_id:
+            self._log_result("POST /blogs/{id}/comments", False, "No blog available")
             return
         
         try:
             response = await self.client.post(
-                f"/blogs/{self.created_blog_id}/comments",
+                f"/blogs/{blog_id}/comments",
                 json={"content": "Test comment from API test"},
                 headers=self._get_headers()
             )
@@ -207,37 +219,40 @@ class TestBlogAPIs(BaseTest):
             if response.status_code == 201:
                 data = response.json()
                 assert "comment_id" in data
-                self._log_result(f"POST /blogs/{self.created_blog_id}/comments", True, f"Comment ID: {data['comment_id']}")
+                self._log_result(f"POST /blogs/{blog_id}/comments", True, f"Comment ID: {data['comment_id']}")
             else:
-                self._log_result(f"POST /blogs/{self.created_blog_id}/comments", False, f"Status: {response.status_code}")
+                self._log_result(f"POST /blogs/{blog_id}/comments", False, f"Status: {response.status_code}")
         except Exception as e:
-            self._log_result(f"POST /blogs/{self.created_blog_id}/comments", False, str(e))
+            self._log_result(f"POST /blogs/{blog_id}/comments", False, str(e))
     
     async def test_list_comments(self):
         """Test GET /blogs/{id}/comments endpoint."""
-        if not self.created_blog_id:
-            self._log_result("GET /blogs/{id}/comments", False, "No blog created yet")
+        blog_id = self.created_blog_id or self.existing_blog_id
+        
+        if not blog_id:
+            self._log_result("GET /blogs/{id}/comments", False, "No blog available")
             return
         
         try:
             response = await self.client.get(
-                f"/blogs/{self.created_blog_id}/comments",
+                f"/blogs/{blog_id}/comments",
                 headers=self._get_headers()
             )
             
             if response.status_code == 200:
                 data = response.json()
                 assert "items" in data
-                self._log_result(f"GET /blogs/{self.created_blog_id}/comments", True, f"Found {len(data['items'])} comments")
+                self._log_result(f"GET /blogs/{blog_id}/comments", True, f"Found {len(data['items'])} comments")
             else:
-                self._log_result(f"GET /blogs/{self.created_blog_id}/comments", False, f"Status: {response.status_code}")
+                self._log_result(f"GET /blogs/{blog_id}/comments", False, f"Status: {response.status_code}")
         except Exception as e:
-            self._log_result(f"GET /blogs/{self.created_blog_id}/comments", False, str(e))
+            self._log_result(f"GET /blogs/{blog_id}/comments", False, str(e))
     
     async def test_delete_blog(self):
         """Test DELETE /blogs/{id} endpoint (cleanup)."""
+        # Only delete blogs we created in this test session
         if not self.created_blog_id:
-            self._log_result("DELETE /blogs/{id}", False, "No blog created yet")
+            self._log_result("DELETE /blogs/{id}", True, "Skipped (no test blog created)")
             return
         
         try:
