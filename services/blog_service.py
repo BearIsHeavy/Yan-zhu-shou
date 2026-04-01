@@ -345,7 +345,6 @@ async def toggle_like(
 
     if existing_like:
         await db.delete(existing_like)
-        blog.like_count = max(0, blog.like_count - 1)
         has_liked = False
     else:
         like = models.BlogLike(
@@ -353,15 +352,15 @@ async def toggle_like(
             user_id=user_id,
         )
         db.add(like)
-        blog.like_count += 1
         has_liked = True
 
     await db.flush()
     await db.refresh(blog)
 
+    # like_count is now computed from relationships
     return {
         "has_liked": has_liked,
-        "like_count": blog.like_count,
+        "like_count": len(blog.likes) if blog.likes else 0,
     }
 
 
@@ -533,9 +532,8 @@ async def delete_comment(
     await db.flush()
     await db.commit()
 
-    blog.comment_count = max(0, blog.comment_count - 1)
-    await db.flush()
-    await db.commit()
+    # comment_count is now computed from relationships, no need to update
+    await db.refresh(blog, attribute_names=["comments"])
 
     return True
 

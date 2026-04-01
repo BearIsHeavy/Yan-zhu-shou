@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, Text
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
+from sqlalchemy.ext.hybrid import hybrid_property
 from database import Base
 
 
@@ -15,9 +16,6 @@ class Blog(Base):
     content_type = Column(String(20), default="markdown", nullable=False)
     tags = Column(String(100))  # Comma-separated tags (max 5 tags, each max 10 chars)
     is_published = Column(Boolean, default=True, nullable=False)
-    view_count = Column(Integer, default=0, nullable=False)
-    like_count = Column(Integer, default=0, nullable=False)
-    comment_count = Column(Integer, default=0, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -25,6 +23,20 @@ class Blog(Base):
     user = relationship("User", back_populates="blogs")
     likes = relationship("BlogLike", back_populates="blog", cascade="all, delete-orphan")
     comments = relationship("BlogComment", back_populates="blog", cascade="all, delete-orphan")
+
+    # Computed properties (dynamically calculated from relationships)
+    @hybrid_property
+    def like_count(self) -> int:
+        """Get like count dynamically from relationships."""
+        return len(self.likes) if self.likes else 0
+
+    @hybrid_property
+    def comment_count(self) -> int:
+        """Get comment count dynamically from relationships."""
+        # Only count non-deleted comments
+        if self.comments:
+            return sum(1 for c in self.comments if not c.is_deleted)
+        return 0
 
     def __repr__(self):
         return f"<Blog(blog_id={self.blog_id}, title={self.title}, user_id={self.user_id})>"
