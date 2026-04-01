@@ -257,7 +257,7 @@ class TestDataGenerator:
                 question_no=question_no,
                 user_answer="A",
                 is_correct=False,
-                attempt_time=datetime.utcnow() - timedelta(days=5),
+                attempt_time=datetime.now() - timedelta(days=5),
                 is_mastered=False
             )
             session.add(log)
@@ -269,7 +269,7 @@ class TestDataGenerator:
                 question_no=self.created_ids['questions'][2],
                 user_answer="A",
                 is_correct=True,
-                attempt_time=datetime.utcnow() - timedelta(days=2),
+                attempt_time=datetime.now() - timedelta(days=2),
                 is_mastered=True
             )
             session.add(log)
