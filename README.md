@@ -1,14 +1,14 @@
-# 📚 YanZhuShou - Question Bank Management System
+# 📚 YanZhuShou - Educational Platform API
 
 <div align="center">
 
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)
-![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)
 
-**A powerful RESTful API for managing educational question banks with bulk import capabilities**
+**A comprehensive RESTful API for educational question banks, blogs, and user management**
 
-[Quick Start](#-quick-start) • [API Docs](#-api-access) • [Documentation](#-documentation)
+[Quick Start](#-quick-start) • [API Docs](http://localhost:8000/docs) • [Documentation](docs/)
 
 </div>
 
@@ -16,13 +16,13 @@
 
 ## 🎯 What is YanZhuShou?
 
-YanZhuShou is a RESTful API service for managing educational question banks. Built with FastAPI and PostgreSQL, it enables educators to:
+YanZhuShou is a modern educational platform backend built with FastAPI and PostgreSQL. It provides:
 
-- 📚 Create and manage question banks
-- 📤 Bulk import questions via CSV/XML
-- ✏️ Add individual questions manually
-- 🔐 Secure authentication with JWT
-- 📊 Track question statistics
+- 📚 **Question Bank Management** - Create, import, and manage educational questions
+- 📝 **Blog System** - Share knowledge with markdown/HTML blog posts and tags
+- 👤 **User Profiles** - Self-introduction with markdown bio files
+- 🔐 **Secure Authentication** - JWT-based auth with Redis caching
+- 💬 **Interactive Features** - Comments, likes, and feedback system
 
 ---
 
@@ -30,84 +30,86 @@ YanZhuShou is a RESTful API service for managing educational question banks. Bui
 
 ### Prerequisites
 
-- **Python 3.12+**
-- **PostgreSQL 16+**
+- Python 3.12+
+- [uv](https://github.com/astral-sh/uv) (Python package manager)
+- PostgreSQL 16+
+- Redis (optional)
 
----
-
-## 💻 Setup & Run
-
-### 1️⃣ Clone the Repository
+### 1. Clone Repository
 
 ```bash
 git clone https://github.com/yourusername/YanZhuShou.git
 cd YanZhuShou/Server
 ```
 
-### 2️⃣ Set Up Virtual Environment
+### 2. Setup Environment with uv
 
 ```bash
 # Create virtual environment
-python -m venv .venv
+uv venv
 
-# Activate (Linux/macOS)
-source .venv/bin/activate
+# Activate environment
+source .venv/bin/activate  # Linux/macOS
+# or
+.venv\Scripts\activate     # Windows
 
-# Activate (Windows)
-.venv\Scripts\activate
+# Install dependencies
+uv pip install -e .
 ```
 
-### 3️⃣ Install Dependencies
+### 3. Configure Environment
 
 ```bash
-pip install -r requirements.txt
-```
+# Copy environment template
+cp .env.example .env
 
-### 4️⃣ Start PostgreSQL and Redis
-
-```bash
-# Option 1: Using Docker (quick setup)
-docker run -d --name postgres -e POSTGRES_USER=api -e POSTGRES_PASSWORD=api \
-  -e POSTGRES_DB=fastapi_db -p 5432:5432 postgres:16-alpine
-
-docker run -d --name redis -p 6379:6379 redis:7.2-alpine
-```
-
-### 5️⃣ Configure Environment
-
-The `.env` file is already configured with default settings:
-
-```env
-DATABASE_URL=postgresql+asyncpg://api:api@localhost:5432/fastapi_db
-SECRET_KEY=your-super-secret-key-change-this-in-production
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
-REDIS_URL=redis://localhost:6379/0
-```
-
-**For production, update `SECRET_KEY`:**
-
-```bash
+# Edit .env file with your settings
+# Required: Update SECRET_KEY for production
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-### 6️⃣ Initialize Database
+**Key Configuration:**
+
+| Variable | Description | Example                                                    |
+|----------|-------------|------------------------------------------------------------|
+| `DATABASE_URL` | PostgreSQL connection | `postgresql+asyncpg://user:password@localhost:5432/dbname` |
+| `REDIS_URL` | Redis connection (optional) | `redis://localhost:6379/0`                                 |
+| `SECRET_KEY` | JWT signing key | **Generate unique key for each deployment**                |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | Token expiry time | `30`                                                       |
+
+### 4. Start Database Services
 
 ```bash
+# Using Docker (recommended)
+docker run -d --name postgres \
+  -e POSTGRES_USER=api \
+  -e POSTGRES_PASSWORD=api \
+  -e POSTGRES_DB=fastapi_db \
+  -p 5432:5432 postgres:16-alpine
+
+docker run -d --name redis -p 6379:6379 redis:7.2-alpine
+
+# Or use your local PostgreSQL and Redis installations
+```
+
+### 5. Initialize Database
+
+```bash
+# Create all database tables
 python db_scripts/init_db.py
 ```
 
-### 7️⃣ Run the Server
+### 6. Run Server
 
 ```bash
 # Development mode (auto-reload)
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
-# Production mode
+# Production mode (multiple workers)
 uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 
-### 8️⃣ Access the API
+### 7. Access API
 
 - **Interactive Docs**: http://localhost:8000/docs
 - **Alternative Docs**: http://localhost:8000/redoc
@@ -115,78 +117,24 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
 
 ---
 
-## 📡 API Access
+## 📁 Project Structure
 
-### Quick Test with cURL
-
-```bash
-# Register a new user
-curl -X POST "http://localhost:8000/users/register" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "test@example.com",
-    "name": "Test User",
-    "password": "password123"
-  }'
-
-# Login and get token
-curl -X POST "http://localhost:8000/users/login" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=test@example.com&password=password123"
 ```
-
-### Using the Interactive Docs
-
-Open http://localhost:8000/docs in your browser to:
-- Explore all available endpoints
-- Test API calls directly
-- View request/response schemas
-
----
-
-## 📚 Documentation
-
-| Topic | Description |
-|-------|-------------|
-| [📁 Project Structure](docs/PROJECT_STRUCTURE.md) | Code organization and file purposes |
-| [🗄️ Database Schema](docs/DATABASE_SCHEMA.md) | ER diagrams and table descriptions |
-| [📡 API Usage](docs/API_USAGE.md) | API endpoints with detailed examples |
-
----
-
-## 🛠️ Tech Stack
-
-| Layer | Technology |
-|-------|------------|
-| **Framework** | FastAPI |
-| **Database** | PostgreSQL 16 |
-| **ORM** | SQLAlchemy (Async) |
-| **Cache** | Redis |
-| **Auth** | JWT (python-jose) + bcrypt |
-| **Validation** | Pydantic v2 |
-
----
-
-## ⚙️ Configuration
-
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection | `postgresql+asyncpg://api:api@localhost:5432/fastapi_db` |
-| `REDIS_URL` | Redis connection | `redis://localhost:6379/0` |
-| `SECRET_KEY` | JWT signing key | **⚠️ Change in production** |
-| `ALGORITHM` | JWT algorithm | `HS256` |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | Token expiration | `30` |
-| `REDIS_CACHE_TTL` | Cache TTL (seconds) | `300` |
-
-### Redis (Optional)
-
-Redis is used for caching user data. If Redis is not available, the application will continue to work without caching.
-
-```bash
-# Start Redis (optional)
-docker run -d --name redis -p 6379:6379 redis:7.2-alpine
+Server/
+├── main.py                 # FastAPI app entry point
+├── database.py             # Database connection
+├── dependencies.py         # Auth and DB dependencies
+├── models/                 # SQLAlchemy ORM models
+│   ├── user.py            # User model
+│   ├── blog.py            # Blog, BlogLike, BlogComment
+│   ├── question.py        # QuestionBank, QBQuestion
+│   └── feedback.py        # Feedback system
+├── schemas/                # Pydantic schemas
+├── routes/                 # API endpoints
+├── services/               # Business logic
+├── utils/                  # Utilities (file storage)
+├── db_scripts/             # Database scripts
+└── docs/                   # Documentation
 ```
 
 ---
@@ -194,47 +142,68 @@ docker run -d --name redis -p 6379:6379 redis:7.2-alpine
 ## 🧪 Testing
 
 ```bash
-# Ensure server is running
+# Start server
 uvicorn main:app --reload &
 
-# Run user API tests
+# Run tests
 python test_api/test_user.py
-
-# Run question API tests
 python test_api/test_question_apis.py
+python test_api/test_blog_apis.py
 ```
+## 📡 API Overview
+
+### Key Endpoints
+
+| Feature | Endpoint | Method | Description |
+|---------|----------|--------|-------------|
+| **Users** | `/users/register` | POST | Register new user |
+| | `/users/login` | POST | Login and get token |
+| | `/users/me` | GET | Get current user info |
+| | `/users/bio` | POST/GET/DELETE | Manage self-introduction |
+| **Question Banks** | `/question_banks` | GET/POST | List/create question banks |
+| | `/upload` | POST | Bulk import questions |
+| **Blogs** | `/blogs` | GET/POST | List/create blog posts |
+| | `/blogs/{id}` | GET/PUT/DELETE | Manage blog post |
+| | `/blogs/tags` | GET/POST | List/create tags |
+| | `/blogs/{id}/like` | POST | Like/unlike blog |
+| | `/blogs/{id}/comments` | GET/POST | List/add comments |
+| **Feedback** | `/api/feedback` | GET/POST | Submit/view feedback |
 
 ---
 
-## 🗄️ Database Scripts
+## 📚 Documentation
 
-| Script | Purpose |
-|--------|---------|
-| `db_scripts/init_db.py` | Create all database tables |
-| `db_scripts/clear_database.py` | Drop all tables (development only) |
+### Core Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Project Structure](docs/PROJECT_STRUCTURE.md) | Code organization and file purposes |
+| [Database Schema](docs/DATABASE_SCHEMA.md) | ER diagrams and table relationships |
+| [API Usage](docs/API_USAGE.md) | Detailed API examples |
+
+### Feature Documentation
+
+| Feature | Documentation |
+|---------|---------------|
+| **Blog System** | [Blog API](docs/BLOG_API.md) • [Tags](docs/BLOG_TAGS_API.md) • [File Storage](docs/BLOG_FILE_STORAGE.md) |
+| **User Bio** | [Bio File API](docs/BIO_FILE_API.md) |
+
+### Deployment Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Docker Setup](docs/DOCKER_DB_INIT.md) | Database auto-initialization |
+| [Docker Verification](docs/DOCKER_FINAL_VERIFICATION.md) | Configuration checklist |
+
+### Technical Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Transaction Fix](docs/TRANSACTION_COMMIT_FIX.md) | Database transaction handling |
 
 ---
 
-## 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/your-feature`)
-3. Commit your changes (`git commit -m 'Add your feature'`)
-4. Push to the branch (`git push origin feature/your-feature`)
-5. Open a Pull Request
-
----
-
-## 📄 License
-
-This project is proprietary software. All rights reserved.
-
----
-
-## 📞 Support
-
-- 🐛 **Bug Reports**: GitHub Issues
-- 💬 **Questions**: GitHub Discussions
 
 ---
 
@@ -242,6 +211,6 @@ This project is proprietary software. All rights reserved.
 
 **Made with ❤️ by the YanZhuShou Team**
 
-[Documentation](docs/PROJECT_STRUCTURE.md) • [API Docs](http://localhost:8000/docs) • [Database Schema](docs/DATABASE_SCHEMA.md)
+[Documentation](docs/) • [API Docs](http://localhost:8000/docs) • [Docker Guide](docs/DOCKER.md)
 
 </div>

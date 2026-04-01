@@ -87,6 +87,15 @@ from schemas.blog import (
     BlogTagListResponse,
     BlogContentResponse,
 )
+from schemas.school_info import (
+    SchoolInfoBase,
+    SchoolInfoCreate,
+    SchoolInfoResponse,
+    SchoolInfoUpdate,
+    SchoolInfoListResponse,
+    FetchTaskCreate,
+    FetchTaskResponse,
+)
 
 __all__ = [
     # User
@@ -167,4 +176,12 @@ __all__ = [
     "BlogTagCreate",
     "BlogTagListResponse",
     "BlogContentResponse",
+    # School Info
+    "SchoolInfoBase",
+    "SchoolInfoCreate",
+    "SchoolInfoResponse",
+    "SchoolInfoUpdate",
+    "SchoolInfoListResponse",
+    "FetchTaskCreate",
+    "FetchTaskResponse",
 ]

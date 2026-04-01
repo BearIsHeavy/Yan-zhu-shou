@@ -14,7 +14,7 @@ DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://api:api@localhost
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 # Create Async engine
-engine = create_async_engine(DATABASE_URL, echo=True)
+engine = create_async_engine(DATABASE_URL, echo=False)  # Set echo=False to disable SQL logging
 
 # Redis client initialization (lazy loading to handle connection errors)
 _redis_client: Optional[redis.Redis] = None
