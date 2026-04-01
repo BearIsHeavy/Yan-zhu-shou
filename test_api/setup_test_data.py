@@ -83,6 +83,9 @@ class TestDataGenerator:
                 "content_type": "markdown",
                 "tags": "python,programming,test",
                 "is_published": True,
+                "view_count": 0,
+                "like_count": 0,
+                "comment_count": 0,
             },
             {
                 "title": "Test Blog - Database Design Patterns",
@@ -90,6 +93,9 @@ class TestDataGenerator:
                 "content_type": "markdown",
                 "tags": "database,design,test",
                 "is_published": True,
+                "view_count": 0,
+                "like_count": 0,
+                "comment_count": 0,
             },
             {
                 "title": "Test Blog - Draft Article",
@@ -97,6 +103,9 @@ class TestDataGenerator:
                 "content_type": "markdown",
                 "tags": "draft,test",
                 "is_published": False,
+                "view_count": 0,
+                "like_count": 0,
+                "comment_count": 0,
             },
         ]
         
