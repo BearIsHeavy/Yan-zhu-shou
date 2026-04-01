@@ -12,7 +12,7 @@ Tests:
 - GET /api/feedback/me/submission-status - Check submission status
 
 Usage:
-    python test_api/test_feedback.py
+    python -m test_api.test_feedback
 """
 
 import asyncio
@@ -25,7 +25,6 @@ class TestFeedbackAPIs(BaseTest):
     def __init__(self):
         super().__init__("Feedback APIs")
         self.created_feedback_id = None
-        self.existing_feedback_id = None  # For existing feedbacks from setup script
     
     async def test_list_feedbacks(self):
         """Test GET /api/feedback endpoint."""
@@ -39,9 +38,6 @@ class TestFeedbackAPIs(BaseTest):
             if response.status_code == 200:
                 data = response.json()
                 assert "items" in data
-                # Store first feedback ID for later tests
-                if len(data['items']) > 0:
-                    self.existing_feedback_id = data['items'][0]['id']
                 self._log_result("GET /api/feedback", True, f"Found {len(data['items'])} feedbacks")
             else:
                 self._log_result("GET /api/feedback", False, f"Status: {response.status_code}")
@@ -91,18 +87,18 @@ class TestFeedbackAPIs(BaseTest):
     
     async def test_get_feedback(self):
         """Test GET /api/feedback/{id} endpoint."""
-        feedback_id = self.created_feedback_id or self.existing_feedback_id
+        feedback_id = self.created_feedback_id or self.get_first_feedback_id()
         
         if not feedback_id:
             self._log_result("GET /api/feedback/{id}", False, "No feedback available")
             return
-
+        
         try:
             response = await self.client.get(
                 f"/api/feedback/{feedback_id}",
                 headers=self._get_headers()
             )
-
+            
             if response.status_code == 200:
                 data = response.json()
                 assert data["id"] == feedback_id
@@ -111,21 +107,21 @@ class TestFeedbackAPIs(BaseTest):
                 self._log_result(f"GET /api/feedback/{feedback_id}", False, f"Status: {response.status_code}")
         except Exception as e:
             self._log_result(f"GET /api/feedback/{feedback_id}", False, str(e))
-
+    
     async def test_vote_feedback(self):
         """Test POST /api/feedback/{id}/vote endpoint."""
-        feedback_id = self.created_feedback_id or self.existing_feedback_id
+        feedback_id = self.created_feedback_id or self.get_first_feedback_id()
         
         if not feedback_id:
             self._log_result("POST /api/feedback/{id}/vote", False, "No feedback available")
             return
-
+        
         try:
             response = await self.client.post(
                 f"/api/feedback/{feedback_id}/vote",
                 headers=self._get_headers()
             )
-
+            
             if response.status_code == 200:
                 data = response.json()
                 assert "has_voted" in data
@@ -137,21 +133,21 @@ class TestFeedbackAPIs(BaseTest):
                 self._log_result(f"POST /api/feedback/{feedback_id}/vote", False, f"Status: {response.status_code}")
         except Exception as e:
             self._log_result(f"POST /api/feedback/{feedback_id}/vote", False, str(e))
-
+    
     async def test_get_vote_status(self):
         """Test GET /api/feedback/{id}/vote endpoint."""
-        feedback_id = self.created_feedback_id or self.existing_feedback_id
+        feedback_id = self.created_feedback_id or self.get_first_feedback_id()
         
         if not feedback_id:
             self._log_result("GET /api/feedback/{id}/vote", False, "No feedback available")
             return
-
+        
         try:
             response = await self.client.get(
                 f"/api/feedback/{feedback_id}/vote",
                 headers=self._get_headers()
             )
-
+            
             if response.status_code == 200:
                 data = response.json()
                 assert "has_voted" in data
@@ -201,13 +197,13 @@ class TestFeedbackAPIs(BaseTest):
         if not self.created_feedback_id:
             self._log_result("DELETE /api/feedback/{id}", True, "Skipped (no test feedback created)")
             return
-
+        
         try:
             response = await self.client.delete(
                 f"/api/feedback/{self.created_feedback_id}",
                 headers=self._get_headers()
             )
-
+            
             if response.status_code == 204:
                 self._log_result(f"DELETE /api/feedback/{self.created_feedback_id}", True, "Feedback deleted")
             elif response.status_code == 403:

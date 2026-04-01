@@ -28,6 +28,12 @@ class BaseTest:
             timeout=30.0
         )
         self.results: list = []
+        self.test_data = {
+            'blogs': [],
+            'feedbacks': [],
+            'question_banks': [],
+            'books': [],
+        }
     
     async def login(self) -> bool:
         """
@@ -58,6 +64,63 @@ class BaseTest:
         except Exception as e:
             self._log_result("login", False, f"Login error: {e}")
             return False
+    
+    async def fetch_existing_data(self):
+        """Fetch existing data from the server for use in tests."""
+        if not self.access_token:
+            return
+        
+        headers = self._get_headers()
+        
+        try:
+            # Fetch blogs
+            response = await self.client.get("/blogs", headers=headers)
+            if response.status_code == 200:
+                data = response.json()
+                self.test_data['blogs'] = data.get('items', [])
+            
+            # Fetch feedbacks
+            response = await self.client.get("/api/feedback", headers=headers)
+            if response.status_code == 200:
+                data = response.json()
+                self.test_data['feedbacks'] = data.get('items', [])
+            
+            # Fetch question banks
+            response = await self.client.get("/question_banks", headers=headers)
+            if response.status_code == 200:
+                self.test_data['question_banks'] = response.json()
+            
+            # Fetch books
+            response = await self.client.get("/api/books", headers=headers)
+            if response.status_code == 200:
+                self.test_data['books'] = response.json()
+                
+        except Exception as e:
+            print(f"Warning: Failed to fetch existing data: {e}")
+    
+    def get_first_blog_id(self) -> Optional[int]:
+        """Get first blog ID from existing data."""
+        if self.test_data['blogs']:
+            return self.test_data['blogs'][0].get('blog_id')
+        return None
+    
+    def get_first_feedback_id(self) -> Optional[int]:
+        """Get first feedback ID from existing data."""
+        if self.test_data['feedbacks']:
+            return self.test_data['feedbacks'][0].get('id')
+        return None
+    
+    def get_first_question_bank_id(self) -> Optional[int]:
+        """Get first question bank ID from existing data."""
+        if self.test_data['question_banks']:
+            return self.test_data['question_banks'][0].get('bank_id')
+        return None
+    
+    def get_first_book_id(self) -> Optional[int]:
+        """Get first book ID from existing data."""
+        if self.test_data['books']:
+            return self.test_data['books'][0].get('id')
+        return None
     
     def _get_headers(self) -> Dict[str, str]:
         """Get headers with authentication token."""
@@ -120,6 +183,14 @@ async def run_test_module(test_class, module_name: str) -> bool:
         if not await tester.login():
             print(f"Failed to login. Skipping {module_name} tests.")
             return False
+        
+        # Fetch existing data for use in tests
+        print(f"  Fetching existing data...")
+        await tester.fetch_existing_data()
+        print(f"  Found {len(tester.test_data['blogs'])} blogs")
+        print(f"  Found {len(tester.test_data['feedbacks'])} feedbacks")
+        print(f"  Found {len(tester.test_data['question_banks'])} question banks")
+        print(f"  Found {len(tester.test_data['books'])} books\n")
         
         # Run all test_* methods
         test_methods = [m for m in dir(tester) if m.startswith('test_') and callable(getattr(tester, m))]

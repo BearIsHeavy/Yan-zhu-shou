@@ -13,12 +13,13 @@ Tests:
 - GET /blogs/tags - List tags
 
 Usage:
-    python test_api/test_blog.py
+    python -m test_api.test_blog
 """
 
 import asyncio
 import io
 from test_base import BaseTest, run_test_module
+from test_file_generator import TestFileGenerator
 
 
 class TestBlogAPIs(BaseTest):
@@ -27,7 +28,6 @@ class TestBlogAPIs(BaseTest):
     def __init__(self):
         super().__init__("Blog APIs")
         self.created_blog_id = None
-        self.existing_blog_id = None  # For existing blogs from setup script
     
     async def test_list_blogs(self):
         """Test GET /blogs endpoint."""
@@ -40,9 +40,6 @@ class TestBlogAPIs(BaseTest):
             if response.status_code == 200:
                 data = response.json()
                 assert "items" in data
-                # Store first blog ID for later tests
-                if len(data['items']) > 0:
-                    self.existing_blog_id = data['items'][0]['blog_id']
                 self._log_result("GET /blogs", True, f"Found {len(data['items'])} blogs")
             else:
                 self._log_result("GET /blogs", False, f"Status: {response.status_code}")
@@ -60,7 +57,7 @@ class TestBlogAPIs(BaseTest):
             if response.status_code == 200:
                 data = response.json()
                 assert "total_posts" in data
-                self._log_result("GET /blogs/stats", True, f"Stats: {data}")
+                self._log_result("GET /blogs/stats", True, f"Stats retrieved")
             else:
                 self._log_result("GET /blogs/stats", False, f"Status: {response.status_code}")
         except Exception as e:
@@ -86,25 +83,29 @@ class TestBlogAPIs(BaseTest):
     async def test_create_blog(self):
         """Test POST /blogs endpoint."""
         try:
-            # Create markdown content
-            content = "# Test Blog Post\n\nThis is a test blog post created by the test script."
-            
-            files = {
-                "content_file": ("test_blog.md", io.BytesIO(content.encode()), "text/markdown"),
-            }
-            data = {
-                "title": "Test Blog Post",
-                "content_type": "markdown",
-                "is_published": "true",
-                "tags": "test,api"
-            }
-            
-            response = await self.client.post(
-                "/blogs",
-                files=files,
-                data=data,
-                headers=self._get_headers()
+            # Generate test markdown file
+            md_file = TestFileGenerator.create_markdown_file(
+                filename=f"test_blog_{asyncio.get_event_loop().time()}.md",
+                title="Test Blog Post"
             )
+            
+            with open(md_file, 'rb') as f:
+                files = {
+                    "content_file": (md_file.name, f, "text/markdown"),
+                }
+                data = {
+                    "title": "Test Blog Post",
+                    "content_type": "markdown",
+                    "is_published": "true",
+                    "tags": "test,api"
+                }
+                
+                response = await self.client.post(
+                    "/blogs",
+                    files=files,
+                    data=data,
+                    headers=self._get_headers()
+                )
             
             if response.status_code == 201:
                 blog_data = response.json()
@@ -117,7 +118,7 @@ class TestBlogAPIs(BaseTest):
     
     async def test_get_blog(self):
         """Test GET /blogs/{id} endpoint."""
-        blog_id = self.created_blog_id or self.existing_blog_id
+        blog_id = self.created_blog_id or self.get_first_blog_id()
         
         if not blog_id:
             self._log_result("GET /blogs/{id}", False, "No blog available")
@@ -140,7 +141,7 @@ class TestBlogAPIs(BaseTest):
     
     async def test_like_blog(self):
         """Test POST /blogs/{id}/like endpoint."""
-        blog_id = self.created_blog_id or self.existing_blog_id
+        blog_id = self.created_blog_id or self.get_first_blog_id()
         
         if not blog_id:
             self._log_result("POST /blogs/{id}/like", False, "No blog available")
@@ -163,7 +164,7 @@ class TestBlogAPIs(BaseTest):
     
     async def test_get_like_status(self):
         """Test GET /blogs/{id}/like endpoint."""
-        blog_id = self.created_blog_id or self.existing_blog_id
+        blog_id = self.created_blog_id or self.get_first_blog_id()
         
         if not blog_id:
             self._log_result("GET /blogs/{id}/like", False, "No blog available")
@@ -203,7 +204,7 @@ class TestBlogAPIs(BaseTest):
     
     async def test_add_comment(self):
         """Test POST /blogs/{id}/comments endpoint."""
-        blog_id = self.created_blog_id or self.existing_blog_id
+        blog_id = self.created_blog_id or self.get_first_blog_id()
         
         if not blog_id:
             self._log_result("POST /blogs/{id}/comments", False, "No blog available")
@@ -227,7 +228,7 @@ class TestBlogAPIs(BaseTest):
     
     async def test_list_comments(self):
         """Test GET /blogs/{id}/comments endpoint."""
-        blog_id = self.created_blog_id or self.existing_blog_id
+        blog_id = self.created_blog_id or self.get_first_blog_id()
         
         if not blog_id:
             self._log_result("GET /blogs/{id}/comments", False, "No blog available")
