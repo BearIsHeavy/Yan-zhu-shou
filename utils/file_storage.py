@@ -16,12 +16,16 @@ BIO_DIR = UPLOAD_DIR / "bios"
 # Blog content files directory
 BLOG_DIR = UPLOAD_DIR / "blogs"
 
+# User books directory
+BOOKS_DIR = UPLOAD_DIR / "books"
+
 
 def ensure_upload_dirs() -> None:
     """Ensure upload directories exist."""
     UPLOAD_DIR.mkdir(exist_ok=True)
     BIO_DIR.mkdir(exist_ok=True)
     BLOG_DIR.mkdir(exist_ok=True)
+    BOOKS_DIR.mkdir(exist_ok=True)
 
 
 def generate_unique_filename(original_filename: str) -> str:

@@ -26,6 +26,7 @@ class User(Base):
     blogs = relationship("Blog", back_populates="user", cascade="all, delete-orphan")
     blog_likes = relationship("BlogLike", back_populates="user", cascade="all, delete-orphan")
     blog_comments = relationship("BlogComment", back_populates="user", cascade="all, delete-orphan")
+    books = relationship("UserBook", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<User(user_id={self.user_id}, name={self.name})>"
