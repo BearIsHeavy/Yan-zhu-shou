@@ -5,7 +5,9 @@ Main test runner for YanZhuShou API.
 Runs all test modules and provides a summary report.
 
 Usage:
-    python test_api/main.py
+    python -m test_api.main
+    or
+    cd test_api && python main.py
 
 Requirements:
     - FastAPI server running on http://127.0.0.1:8000
@@ -22,17 +24,23 @@ Test Modules:
 
 import asyncio
 import sys
+import os
 from datetime import datetime
 from typing import List, Tuple
 
-# Import test modules
-from test_api.test_base import BaseTest
-from test_api.test_user import main as test_user
-from test_api.test_blog import main as test_blog
-from test_api.test_feedback import main as test_feedback
-from test_api.test_question import main as test_question
-from test_api.test_mistake import main as test_mistake
-from test_api.test_rag import main as test_rag
+# Add test_api directory to path
+TEST_API_DIR = os.path.dirname(os.path.abspath(__file__))
+if TEST_API_DIR not in sys.path:
+    sys.path.insert(0, TEST_API_DIR)
+
+# Import test modules (relative imports work with path set)
+from test_base import BaseTest
+from test_user import main as test_user
+from test_blog import main as test_blog
+from test_feedback import main as test_feedback
+from test_question import main as test_question
+from test_mistake import main as test_mistake
+from test_rag import main as test_rag
 
 
 # Test module configuration
@@ -141,6 +149,11 @@ async def run_all_tests(selected_modules: List[str] = None) -> bool:
 
 def main():
     """Main entry point."""
+    # Add test_api directory to path if running as script
+    if __name__ == "__main__":
+        import os
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    
     # Parse command line arguments
     selected_modules = None
     if len(sys.argv) > 1:

@@ -60,31 +60,36 @@ redis-server
 ### 运行所有测试
 
 ```bash
-python test_api/main.py
+# 方式 1: 从项目根目录运行（推荐）
+python -m test_api.main
+
+# 方式 2: 进入 test_api 目录运行
+cd test_api
+python main.py
 ```
 
 ### 运行特定模块测试
 
 ```bash
 # 只测试用户 API
-python test_api/main.py "User APIs"
+python -m test_api.main "User APIs"
 
 # 只测试博客和反馈 API
-python test_api/main.py "Blog APIs" "Feedback APIs"
+python -m test_api.main "Blog APIs" "Feedback APIs"
 
 # 只测试 RAG 模块
-python test_api/main.py "RAG APIs"
+python -m test_api.main "RAG APIs"
 ```
 
 ### 运行单个测试文件
 
 ```bash
-python test_api/test_user.py
-python test_api/test_blog.py
-python test_api/test_feedback.py
-python test_api/test_question.py
-python test_api/test_mistake.py
-python test_api/test_rag.py
+python -m test_api.test_user
+python -m test_api.test_blog
+python -m test_api.test_feedback
+python -m test_api.test_question
+python -m test_api.test_mistake
+python -m test_api.test_rag
 ```
 
 ---
