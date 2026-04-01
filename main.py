@@ -9,6 +9,7 @@ from routes import users, question_banks, questions, mistake, feedback, blog, sc
 from knowledge.routes import knowledge as knowledge_router
 from books.routes import books as books_router
 from reports.routes import reports as reports_router
+from rag.routes import rag as rag_router
 
 app = FastAPI()
 
@@ -57,3 +58,6 @@ app.include_router(school_info.router)
 app.include_router(knowledge_router, prefix="/api/knowledge", tags=["Knowledge"])
 app.include_router(books_router, prefix="/api/books", tags=["Books"])
 app.include_router(reports_router, prefix="/api/reports", tags=["Analysis Reports"])
+
+# RAG Module Routes
+app.include_router(rag_router, prefix="/api/rag", tags=["RAG"])

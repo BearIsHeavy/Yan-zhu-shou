@@ -19,6 +19,9 @@ from books.models.user_book import UserBook
 from knowledge.models.knowledge_point import KnowledgePoint
 from knowledge.models.question_knowledge import QuestionKnowledge
 from reports.models.analysis_report import AnalysisReport
+from rag.models.knowledge_embedding import KnowledgeEmbedding
+from rag.models.document_chunk import DocumentChunk
+from rag.models.rag_query import RAGQuery
 
 # Export all models
 __all__ = [
@@ -44,4 +47,7 @@ __all__ = [
     "KnowledgePoint",
     "QuestionKnowledge",
     "AnalysisReport",
+    "KnowledgeEmbedding",
+    "DocumentChunk",
+    "RAGQuery",
 ]
