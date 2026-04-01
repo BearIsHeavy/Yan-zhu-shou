@@ -1,18 +1,21 @@
 """School Info API - Simple sorting and filtering"""
 
+import json
+from datetime import datetime, timedelta
+from typing import Optional, List, Dict
+
+import subprocess
+import os
+import sys
+
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, asc, desc
-from typing import Optional, List, Dict
-import subprocess
-import os
-import re
-from datetime import datetime
-import sys
+from redis.asyncio import Redis
 
 import models
 from schemas import school_info as schemas
-from dependencies import get_db, get_current_user
+from dependencies import get_db, get_current_user, get_redis
 
 # Add project root to path for importing services
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -20,8 +23,29 @@ from services import process_school_data
 
 router = APIRouter(prefix="/school-info", tags=["SchoolInfo"])
 
-# Global variable to track user fetch tasks: {user_id: {"status": "...", "error": "...", "message": "..."}}
-user_fetch_tasks: Dict[int, dict] = {}
+# Redis key prefix for task status
+TASK_STATUS_PREFIX = "school_fetch_task"
+TASK_STATUS_TTL = 3600  # 1 hour TTL
+
+
+def _get_task_status_key(user_id: int) -> str:
+    """Generate Redis key for task status."""
+    return f"{TASK_STATUS_PREFIX}:{user_id}"
+
+
+async def _get_task_status(redis: Redis, user_id: int) -> Optional[Dict]:
+    """Get task status from Redis."""
+    key = _get_task_status_key(user_id)
+    data = await redis.get(key)
+    if data:
+        return json.loads(data)
+    return None
+
+
+async def _set_task_status(redis: Redis, user_id: int, status_data: Dict) -> None:
+    """Set task status in Redis with TTL."""
+    key = _get_task_status_key(user_id)
+    await redis.setex(key, TASK_STATUS_TTL, json.dumps(status_data))
 
 # Log directory
 LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs", "fetch")
@@ -101,18 +125,28 @@ def update_curl_in_script(curl_command: str, user_id: int = None) -> bool:
         return False
 
 
-async def fetch_and_process_data(user_id: int, mode: str, pages: int, curl_command: str):
+async def fetch_and_process_data(
+    user_id: int,
+    mode: str,
+    pages: int,
+    curl_command: str,
+    redis: Redis
+):
     """Background task to fetch and process data with status tracking and detailed logging"""
-    
+
     # Log start
     log_to_file(user_id, "==========================================")
     log_to_file(user_id, f"任务开始：user_id={user_id}, mode={mode}, pages={pages}")
-    
+
     try:
-        # Update status to running
-        if user_id in user_fetch_tasks:
-            user_fetch_tasks[user_id]["status"] = "running"
-            log_to_file(user_id, "状态：pending → running")
+        # Update status to running in Redis
+        await _set_task_status(redis, user_id, {
+            "status": "running",
+            "error": None,
+            "message": "Task is running",
+            "fetched_count": 0
+        })
+        log_to_file(user_id, "状态：pending → running")
 
         script_dir = os.path.join(
             os.path.dirname(os.path.dirname(__file__)),
@@ -128,58 +162,63 @@ async def fetch_and_process_data(user_id: int, mode: str, pages: int, curl_comma
             text=True,
             cwd=script_dir
         )
-        
+
         log_to_file(user_id, f"fetch.sh 返回：exit_code={result.returncode}")
-        
+
         if result.returncode != 0:
             error_msg = f"Fetch failed: {result.stderr}"
             log_to_file(user_id, f"✗ 错误：{error_msg}")
             if result.stdout:
                 log_to_file(user_id, f"输出：{result.stdout}")
             raise Exception(error_msg)
-        
+
         log_to_file(user_id, f"✓ fetch.sh 完成")
         if result.stdout:
             log_to_file(user_id, f"输出：{result.stdout[:500]}...")
 
         # Step 2: Process data using service layer
         log_to_file(user_id, f"Step 2: 执行 process_school_data user_id={user_id}")
-        
+
         # Use absolute path to Info directory
         info_dir = os.path.join(script_dir, "Info")
-        
+
         # Create log file for this processing run
         process_log_file = os.path.join(LOG_DIR, f"user_{user_id}_process_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
-        
+
         inserted, updated, skipped = await process_school_data(
             json_directory=info_dir,
             user_id=user_id,
             log_file=process_log_file  # Pass log file path
         )
-        
+
         log_to_file(user_id, f"✓ process_school_data 完成")
         log_to_file(user_id, f"结果：inserted={inserted}, updated={updated}, skipped={skipped}")
 
-        # Success
-        if user_id in user_fetch_tasks:
-            user_fetch_tasks[user_id]["status"] = "success"
-            user_fetch_tasks[user_id]["fetched_count"] = inserted + updated
-            user_fetch_tasks[user_id]["message"] = f"成功处理 {inserted + updated} 条数据 (新增:{inserted}, 更新:{updated})"
-        
-        log_to_file(user_id, f"✓ 任务完成：成功处理 {inserted + updated} 条数据")
-        log_to_file(user_id, f"状态：running → success")
+        # Success - update Redis
+        fetched_count = inserted + updated
+        await _set_task_status(redis, user_id, {
+            "status": "success",
+            "error": None,
+            "message": f"成功处理 {fetched_count} 条数据 (新增:{inserted}, 更新:{updated})",
+            "fetched_count": fetched_count
+        })
+
+        log_to_file(user_id, f"✓ 任务完成：成功处理 {fetched_count} 条数据")
+        log_to_file(user_id, "状态：running → success")
 
     except Exception as e:
-        # Failed
+        # Failed - update Redis
         error_msg = str(e)
         log_to_file(user_id, f"✗ 异常：{type(e).__name__}: {error_msg}")
-        log_to_file(user_id, f"状态：running → failed")
-        
-        if user_id in user_fetch_tasks:
-            user_fetch_tasks[user_id]["status"] = "failed"
-            user_fetch_tasks[user_id]["error"] = error_msg
-            user_fetch_tasks[user_id]["message"] = f"Task failed: {error_msg}"
-            
+        log_to_file(user_id, "状态：running → failed")
+
+        await _set_task_status(redis, user_id, {
+            "status": "failed",
+            "error": error_msg,
+            "message": f"Task failed: {error_msg}",
+            "fetched_count": 0
+        })
+
         # Log error to file
         log_error_to_file(user_id, error_msg)
 
@@ -202,6 +241,7 @@ async def fetch_data(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
+    redis: Optional[Redis] = Depends(get_redis),
 ):
     """
     Fetch school data from CHSI
@@ -211,19 +251,31 @@ async def fetch_data(
     - **pages**: Number of pages to fetch (when mode="all")
     - **page_num**: Page number (when mode="single")
     """
+    if not redis:
+        raise HTTPException(
+            status_code=503,
+            detail="Redis is not available. Task tracking requires Redis."
+        )
+    
     user_id = current_user.user_id
 
     # Check if previous task is still running
-    if user_id in user_fetch_tasks and user_fetch_tasks[user_id].get("status") == "running":
+    task_status = await _get_task_status(redis, user_id)
+    if task_status and task_status.get("status") == "running":
         raise HTTPException(status_code=400, detail="Previous task is still running")
 
     # Update curl command in script
     if not update_curl_in_script(request.curl_command, user_id):
         raise HTTPException(status_code=500, detail="Failed to update curl command")
 
-    # Initialize task status
-    user_fetch_tasks[user_id] = {"status": "pending", "error": None, "message": None, "fetched_count": 0}
-    
+    # Initialize task status in Redis
+    await _set_task_status(redis, user_id, {
+        "status": "pending",
+        "error": None,
+        "message": None,
+        "fetched_count": 0
+    })
+
     # Log
     log_to_file(user_id, f"创建任务：mode={request.mode}, pages={request.pages}")
 
@@ -231,8 +283,8 @@ async def fetch_data(
     mode = request.mode
     pages = request.pages if request.mode == "all" else (request.page_num or 0)
 
-    # Add background task with curl command
-    background_tasks.add_task(fetch_and_process_data, user_id, mode, pages, request.curl_command)
+    # Add background task with redis
+    background_tasks.add_task(fetch_and_process_data, user_id, mode, pages, request.curl_command, redis)
 
     return schemas.FetchTaskResponse(
         status="pending",
@@ -243,17 +295,27 @@ async def fetch_data(
 @router.get("/fetch/status", response_model=schemas.FetchTaskStatus)
 async def get_fetch_status(
     current_user: models.User = Depends(get_current_user),
+    redis: Optional[Redis] = Depends(get_redis),
 ):
     """Get current user's fetch task status"""
-    user_id = current_user.user_id
-    
-    if user_id not in user_fetch_tasks:
+    if not redis:
         return schemas.FetchTaskStatus(
             status="none",
-            message="No task created yet"
+            message="Redis is not available",
+            fetched_count=0
         )
     
-    task = user_fetch_tasks[user_id]
+    user_id = current_user.user_id
+
+    task = await _get_task_status(redis, user_id)
+    
+    if not task:
+        return schemas.FetchTaskStatus(
+            status="none",
+            message="No task created yet",
+            fetched_count=0
+        )
+
     return schemas.FetchTaskStatus(
         status=task.get("status", "none"),
         error=task.get("error"),
