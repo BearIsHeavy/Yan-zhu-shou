@@ -154,6 +154,9 @@ async def get_wrong_questions(
         query = query.where(models.QBQuestion.category == category)
     
     # Apply status filter (mapped to is_mastered field)
+    from datetime import datetime, timedelta
+    seven_days_ago = datetime.utcnow() - timedelta(days=7)
+    
     if status_filter:
         if status_filter == schemas.QuestionStatusEnum.MASTERED:
             query = query.where(models.UserQuestionLog.is_mastered == True)
@@ -161,14 +164,14 @@ async def get_wrong_questions(
             query = query.where(
                 and_(
                     models.UserQuestionLog.is_mastered == False,
-                    models.UserQuestionLog.attempt_time >= func.date_sub(func.now(), interval=7)  # Recent
+                    models.UserQuestionLog.attempt_time >= seven_days_ago  # Recent
                 )
             )
         elif status_filter == schemas.QuestionStatusEnum.REVIEWING:
             query = query.where(
                 and_(
                     models.UserQuestionLog.is_mastered == False,
-                    models.UserQuestionLog.attempt_time < func.date_sub(func.now(), interval=7)
+                    models.UserQuestionLog.attempt_time < seven_days_ago
                 )
             )
     
@@ -280,12 +283,15 @@ async def get_mistake_notebook_stats(
     mastered_count = mastered_result.scalar() or 0
     
     # New count (wrong and not mastered, attempted within last 7 days)
+    from datetime import datetime, timedelta
+    seven_days_ago = datetime.utcnow() - timedelta(days=7)
+    
     new_query = select(func.count()).where(
         and_(
             models.UserQuestionLog.user_id == current_user.user_id,
             models.UserQuestionLog.is_correct == False,
             models.UserQuestionLog.is_mastered == False,
-            models.UserQuestionLog.attempt_time >= func.date_sub(func.now(), interval=7)
+            models.UserQuestionLog.attempt_time >= seven_days_ago
         )
     )
     new_result = await db.execute(new_query)
