@@ -88,8 +88,8 @@ async def vote_feedback(
     await db.commit()
     await db.refresh(feedback)
     
-    # vote_count is now computed from relationships
-    vote_count = len(feedback.votes) if feedback.votes else 0
+    # vote_count is now a column_property, automatically calculated
+    vote_count = feedback.vote_count
 
     # Check if threshold is reached and send notification
     if has_voted and vote_count >= FEEDBACK_VOTE_THRESHOLD:
@@ -117,10 +117,9 @@ async def get_vote_status(
     Returns:
         dict: {has_voted: bool, vote_count: int}
     """
-    # Get feedback with votes relationship
+    # Get feedback with vote_count (column_property handles this)
     result = await db.execute(
         select(models.Feedback)
-        .options(joinedload(models.Feedback.votes))
         .where(models.Feedback.id == feedback_id)
     )
     feedback = result.scalar_one_or_none()
@@ -134,7 +133,7 @@ async def get_vote_status(
 
     return {
         "has_voted": has_voted,
-        "vote_count": len(feedback.votes) if feedback.votes else 0,
+        "vote_count": feedback.vote_count,
     }
 
 

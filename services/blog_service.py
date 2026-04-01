@@ -355,12 +355,13 @@ async def toggle_like(
         has_liked = True
 
     await db.flush()
+    await db.commit()
     await db.refresh(blog)
 
-    # like_count is now computed from relationships
+    # like_count is now a column_property, automatically calculated
     return {
         "has_liked": has_liked,
-        "like_count": len(blog.likes) if blog.likes else 0,
+        "like_count": blog.like_count,
     }
 
 

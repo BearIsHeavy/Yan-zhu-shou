@@ -1,7 +1,6 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, Text
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, Text, select
 from sqlalchemy.sql import func
-from sqlalchemy.orm import relationship
-from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import relationship, column_property
 from database import Base
 
 
@@ -24,19 +23,19 @@ class Blog(Base):
     likes = relationship("BlogLike", back_populates="blog", cascade="all, delete-orphan")
     comments = relationship("BlogComment", back_populates="blog", cascade="all, delete-orphan")
 
-    # Computed properties (dynamically calculated from relationships)
-    @hybrid_property
-    def like_count(self) -> int:
-        """Get like count dynamically from relationships."""
-        return len(self.likes) if self.likes else 0
+    # Computed column properties (calculated via subquery)
+    like_count = column_property(
+        select(func.count()).where(
+            BlogLike.blog_id == blog_id
+        ).correlate_except(BlogLike)
+    )
 
-    @hybrid_property
-    def comment_count(self) -> int:
-        """Get comment count dynamically from relationships."""
-        # Only count non-deleted comments
-        if self.comments:
-            return sum(1 for c in self.comments if not c.is_deleted)
-        return 0
+    comment_count = column_property(
+        select(func.count()).where(
+            BlogComment.blog_id == blog_id,
+            BlogComment.is_deleted == False
+        ).correlate_except(BlogComment)
+    )
 
     def __repr__(self):
         return f"<Blog(blog_id={self.blog_id}, title={self.title}, user_id={self.user_id})>"

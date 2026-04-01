@@ -1,7 +1,6 @@
-from sqlalchemy import Column, Integer, String, SmallInteger, DateTime, ForeignKey, Text, UniqueConstraint
+from sqlalchemy import Column, Integer, String, SmallInteger, DateTime, ForeignKey, Text, UniqueConstraint, select
 from sqlalchemy.sql import func
-from sqlalchemy.orm import relationship
-from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.orm import relationship, column_property
 from database import Base
 from enum import Enum as PyEnum
 
@@ -41,11 +40,12 @@ class Feedback(Base):
     votes = relationship("FeedbackVote", back_populates="feedback", cascade="all, delete-orphan")
     notifications = relationship("FeedbackNotification", back_populates="feedback", cascade="all, delete-orphan")
 
-    # Computed property (dynamically calculated from relationships)
-    @hybrid_property
-    def vote_count(self) -> int:
-        """Get vote count dynamically from relationships."""
-        return len(self.votes) if self.votes else 0
+    # Computed column property (calculated via subquery)
+    vote_count = column_property(
+        select(func.count()).where(
+            FeedbackVote.feedback_id == id
+        ).correlate_except(FeedbackVote)
+    )
 
     def __repr__(self):
         return f"<Feedback(id={self.id}, user_id={self.user_id}, status={self.status})>"
