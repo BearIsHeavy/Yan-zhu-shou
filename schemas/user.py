@@ -8,6 +8,7 @@ class UserBase(BaseModel):
     name: str = Field(min_length=1, max_length=50)
     phone: Optional[str] = Field(default=None, min_length=11, max_length=20)
     gender: int = Field(default=0, ge=0, le=2, description="0:Unknown 1:Male 2:Female")
+    role: str = Field(default="user", description="User role: user, admin, developer")
 
 
 class UserCreate(UserBase):

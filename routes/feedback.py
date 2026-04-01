@@ -17,11 +17,13 @@ router = APIRouter(tags=["Feedback"])
 def _is_developer_or_admin(user: models.User) -> bool:
     """Check if user is developer or admin.
     
-    TODO: Implement proper role-based access control.
-    For now, returns True for all authenticated users.
+    Args:
+        user: Current authenticated user
+        
+    Returns:
+        True if user has admin or developer role
     """
-    # TODO: Add role field to User model and check here
-    return True
+    return user.role in ("admin", "developer")
 
 
 @router.get("", response_model=feedback_schemas.FeedbackListResponse)
@@ -237,11 +239,9 @@ async def delete_feedback(
 ):
     """
     Delete feedback.
-    
-    **Requires admin role** or **original author (if no votes)**.
+
+    **Requires admin/developer role** or **original author (if no votes)**.
     """
-    # TODO: Implement proper admin check
-    # For now, allow deletion only if user is author and no votes
     feedback = await feedback_service.get_feedback(db, feedback_id)
 
     if feedback is None:
@@ -252,14 +252,16 @@ async def delete_feedback(
 
     # Check permissions
     is_author = feedback.user_id == current_user.user_id
-    is_admin = False  # TODO: Implement admin check
+    is_admin = _is_developer_or_admin(current_user)
 
+    if not is_admin and not is_author:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the author or admin/developer can delete feedback",
+        )
+    
+    # Non-admin users can only delete their own feedback with no votes
     if not is_admin:
-        if not is_author:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only the author or admin can delete feedback",
-            )
         if feedback.vote_count > 0:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
