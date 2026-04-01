@@ -106,7 +106,7 @@ class Feedback(Base):
     vote_count = column_property(
         select(func.count()).where(
             FeedbackVote.feedback_id == id
-        ).correlate_except(FeedbackVote)
+        ).correlate_except(FeedbackVote).scalar_subquery()
     )
 
     def __repr__(self):
