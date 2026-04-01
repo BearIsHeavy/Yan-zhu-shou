@@ -44,7 +44,22 @@ redis-server
 # 确保数据库已启动并可访问
 ```
 
-### 3. 测试用户
+### 3. 准备测试数据
+
+运行测试数据准备脚本：
+
+```bash
+# 从项目根目录运行
+python test_api/setup_test_data.py
+
+# 或进入 test_api 目录运行
+cd test_api
+python setup_test_data.py
+```
+
+**注意**: 脚本会自动检测并使用 `.env` 中的数据库配置。
+
+### 4. 测试用户
 
 测试使用以下预配置的用户账号：
 
@@ -52,6 +67,67 @@ redis-server
 - **密码**: 123456
 
 **注意**: 请确保该用户已存在于数据库中。如不存在，请先手动注册。
+
+---
+
+## 测试数据管理
+
+### 准备测试数据
+
+在运行测试之前，先准备测试数据：
+
+```bash
+python test_api/setup_test_data.py
+```
+
+这会创建：
+- 3 篇博客文章（包含点赞和评论）
+- 3 条反馈（包含投票和通知）
+- 2 个题库（包含 5 道题目）
+- 错题本记录
+- 知识点（包含层级关系）
+- 学校信息（包含用户映射）
+- 测试书籍记录
+- 分析报告
+
+### 清理测试数据
+
+测试完成后清理数据：
+
+```bash
+python test_api/setup_test_data.py --cleanup
+```
+
+### 测试流程
+
+完整的测试流程：
+
+```bash
+# 1. 准备测试数据
+python test_api/setup_test_data.py
+
+# 2. 运行测试
+python -m test_api.main
+
+# 3. 清理测试数据
+python test_api/setup_test_data.py --cleanup
+```
+
+### 脚本选项
+
+```bash
+# 只显示帮助
+python test_api/setup_test_data.py --help
+
+# 准备数据
+python test_api/setup_test_data.py
+
+# 清理数据
+python test_api/setup_test_data.py --cleanup
+
+# 准备后立即清理（用于验证脚本）
+python test_api/setup_test_data.py --both
+```
 
 ---
 
