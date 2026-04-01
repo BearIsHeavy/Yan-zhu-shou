@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, text
 
 # Import models (core modules only)
 from models.user import User
@@ -83,9 +83,6 @@ class TestDataGenerator:
                 "content_type": "markdown",
                 "tags": "python,programming,test",
                 "is_published": True,
-                "view_count": 0,
-                "like_count": 0,
-                "comment_count": 0,
             },
             {
                 "title": "Test Blog - Database Design Patterns",
@@ -93,9 +90,6 @@ class TestDataGenerator:
                 "content_type": "markdown",
                 "tags": "database,design,test",
                 "is_published": True,
-                "view_count": 0,
-                "like_count": 0,
-                "comment_count": 0,
             },
             {
                 "title": "Test Blog - Draft Article",
@@ -103,9 +97,6 @@ class TestDataGenerator:
                 "content_type": "markdown",
                 "tags": "draft,test",
                 "is_published": False,
-                "view_count": 0,
-                "like_count": 0,
-                "comment_count": 0,
             },
         ]
         
@@ -113,6 +104,8 @@ class TestDataGenerator:
             blog = Blog(user_id=user.user_id, **blog_data)
             session.add(blog)
             await session.flush()
+            # Refresh to get the blog_id
+            await session.refresh(blog)
             self.created_ids['blogs'].append(blog.blog_id)
             print(f"    ✓ Created blog: {blog.title}")
         
@@ -292,6 +285,17 @@ class TestDataGenerator:
         
         async with AsyncSessionLocal() as session:
             try:
+                # First, drop view_count column if it exists (not in model anymore)
+                try:
+                    await session.execute(
+                        text('ALTER TABLE blogs DROP COLUMN IF EXISTS view_count')
+                    )
+                    await session.commit()
+                    print("  ✓ Dropped view_count column from blogs table\n")
+                except Exception as e:
+                    print(f"  ⚠️  Could not drop view_count: {e}\n")
+                    await session.rollback()
+                
                 # Get test user
                 user = await self.get_test_user(session)
                 print(f"  ✓ Found test user: {user.email}\n")
