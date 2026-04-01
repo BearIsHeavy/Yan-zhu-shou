@@ -80,15 +80,13 @@ python setup_test_data.py
 python test_api/setup_test_data.py
 ```
 
-这会创建：
+这会创建核心功能的测试数据：
 - 3 篇博客文章（包含点赞和评论）
 - 3 条反馈（包含投票和通知）
 - 2 个题库（包含 5 道题目）
 - 错题本记录
-- 知识点（包含层级关系）
-- 学校信息（包含用户映射）
-- 测试书籍记录
-- 分析报告
+
+**注意**: 本脚本不包括 AI 相关模块（Knowledge、Books、Reports、School Info）的测试数据。
 
 ### 清理测试数据
 

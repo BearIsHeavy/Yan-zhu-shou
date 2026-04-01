@@ -1,7 +1,10 @@
 """
 Test Data Setup and Cleanup Script.
 
-Creates test data for all API test modules, then cleans up after testing.
+Creates test data for core API test modules (Blog, Feedback, Question Bank, Mistake Notebook),
+then cleans up after testing.
+
+Note: This script does NOT include AI-related modules (Knowledge, Books, Reports, School Info).
 
 Usage:
     python test_api/setup_test_data.py           # Setup test data
@@ -22,20 +25,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy import select, delete
-from sqlalchemy.orm import sessionmaker
 
-# Import models
+# Import models (core modules only)
 from models.user import User
 from models.blog import Blog, BlogLike, BlogComment
 from models.feedback import Feedback, FeedbackVote, FeedbackNotification
-from models.question import QuestionBank, QBQuestion, StemText, AnswerText
+from models.question import QuestionBank, QBQuestion
 from models.log import UserQuestionLog
-from models.school_info import SchoolInfo
-from models.user_school_mapping import UserSchoolMapping
-from knowledge.models.knowledge_point import KnowledgePoint
-from knowledge.models.question_knowledge import QuestionKnowledge
-from books.models.user_book import UserBook
-from reports.models.analysis_report import AnalysisReport
 
 # Database URL from environment
 from dotenv import load_dotenv
@@ -49,10 +45,9 @@ AsyncSessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_
 
 
 class TestDataGenerator:
-    """Generate test data for all modules."""
+    """Generate test data for core modules only."""
     
     # Test data identifiers (for easy cleanup)
-    TEST_PREFIX = "test_"
     TEST_USER_EMAIL = "test@example.com"
     
     def __init__(self):
@@ -61,14 +56,10 @@ class TestDataGenerator:
             'feedbacks': [],
             'question_banks': [],
             'questions': [],
-            'knowledge_points': [],
-            'books': [],
-            'reports': [],
-            'school_infos': [],
         }
     
     async def get_test_user(self, session: AsyncSession) -> User:
-        """Get or create test user."""
+        """Get test user."""
         result = await session.execute(
             select(User).where(User.email == self.TEST_USER_EMAIL)
         )
@@ -76,7 +67,7 @@ class TestDataGenerator:
         
         if not user:
             print(f"⚠️  Test user {self.TEST_USER_EMAIL} not found in database!")
-            print("   Please create the user first or update TEST_USER_EMAIL.")
+            print("   Please create the user first.")
             raise ValueError(f"Test user {self.TEST_USER_EMAIL} not found")
         
         return user
@@ -284,191 +275,6 @@ class TestDataGenerator:
         await session.flush()
         print("    ✓ Created mistake notebook entries")
     
-    async def create_knowledge_points(self, session: AsyncSession):
-        """Create test knowledge points."""
-        print("  Creating test knowledge points...")
-        
-        # Create parent knowledge points
-        parent_math = KnowledgePoint(
-            name="Mathematics",
-            subject="Math",
-            difficulty=3,
-            description="Mathematical concepts and principles"
-        )
-        session.add(parent_math)
-        await session.flush()
-        self.created_ids['knowledge_points'].append(parent_math.id)
-        
-        parent_physics = KnowledgePoint(
-            name="Physics",
-            subject="Science",
-            difficulty=3,
-            description="Physical sciences"
-        )
-        session.add(parent_physics)
-        await session.flush()
-        self.created_ids['knowledge_points'].append(parent_physics.id)
-        
-        # Create child knowledge points
-        algebra = KnowledgePoint(
-            name="Algebra",
-            subject="Math",
-            parent_id=parent_math.id,
-            difficulty=2,
-            description="Algebraic equations and operations"
-        )
-        session.add(algebra)
-        await session.flush()
-        self.created_ids['knowledge_points'].append(algebra.id)
-        
-        geometry = KnowledgePoint(
-            name="Geometry",
-            subject="Math",
-            parent_id=parent_math.id,
-            difficulty=2,
-            description="Geometric shapes and properties"
-        )
-        session.add(geometry)
-        await session.flush()
-        self.created_ids['knowledge_points'].append(geometry.id)
-        
-        # Link questions to knowledge points
-        if self.created_ids['questions']:
-            link = QuestionKnowledge(
-                question_no=self.created_ids['questions'][0],
-                knowledge_id=algebra.id,
-                weight=0.9
-            )
-            session.add(link)
-        
-        await session.flush()
-        print(f"    ✓ Created {len(self.created_ids['knowledge_points'])} knowledge points")
-    
-    async def create_school_infos(self, session: AsyncSession, user: User):
-        """Create test school information."""
-        print("  Creating test school information...")
-        
-        schools_data = [
-            {
-                "id": "test_school_001",
-                "city": "Beijing",
-                "region": 1,
-                "school_code": "10001",
-                "school_name": "Test University 1",
-                "college_code": "001",
-                "college_name": "Computer Science",
-                "major_code": "001",
-                "major_name": "Computer Science and Technology",
-                "direction_code": "001",
-                "direction_name": "AI",
-                "adjustment_count": 10,
-                "cutoff_score": "650",
-            },
-            {
-                "id": "test_school_002",
-                "city": "Shanghai",
-                "region": 1,
-                "school_code": "20001",
-                "school_name": "Test University 2",
-                "college_code": "002",
-                "college_name": "Software Engineering",
-                "major_code": "002",
-                "major_name": "Software Engineering",
-                "direction_code": "002",
-                "direction_name": "Data Science",
-                "adjustment_count": 5,
-                "cutoff_score": "640",
-            },
-        ]
-        
-        for school_data in schools_data:
-            school = SchoolInfo(**school_data)
-            session.add(school)
-            await session.flush()
-            self.created_ids['school_infos'].append(school.id)
-            print(f"    ✓ Created school: {school.school_name}")
-        
-        # Create user-school mappings
-        for school_id in self.created_ids['school_infos']:
-            mapping = UserSchoolMapping(user_id=user.user_id, school_id=school_id)
-            session.add(mapping)
-        
-        await session.flush()
-        print(f"    ✓ Created {len(self.created_ids['school_infos'])} schools with mappings")
-    
-    async def create_test_books(self, session: AsyncSession, user: User):
-        """Create test book records."""
-        print("  Creating test book records...")
-        
-        books_data = [
-            {
-                "title": "Test Book - Python Programming",
-                "file_path": "uploads/books/1/test_python.md",
-                "file_type": "markdown",
-                "file_size": 1024,
-                "status": 2,  # COMPLETED
-                "knowledge_tree": '{"subject": "Programming", "topics": [{"name": "Python Basics"}]}',
-                "chapter_count": 5,
-            },
-            {
-                "title": "Test Book - Database Systems",
-                "file_path": "uploads/books/1/test_database.md",
-                "file_type": "markdown",
-                "file_size": 2048,
-                "status": 1,  # PROCESSING
-                "knowledge_tree": None,
-                "chapter_count": 0,
-            },
-        ]
-        
-        for book_data in books_data:
-            book = UserBook(user_id=user.user_id, **book_data)
-            session.add(book)
-            await session.flush()
-            self.created_ids['books'].append(book.id)
-            print(f"    ✓ Created book: {book.title}")
-        
-        print(f"    ✓ Created {len(self.created_ids['books'])} books")
-    
-    async def create_test_reports(self, session: AsyncSession, user: User):
-        """Create test analysis reports."""
-        print("  Creating test analysis reports...")
-        
-        import json
-        
-        reports_data = [
-            {
-                "report_type": "weak_point",
-                "data": json.dumps({
-                    "weak_points": [
-                        {"knowledge": "Algebra", "error_count": 5, "confidence": 0.8}
-                    ],
-                    "error_patterns": ["Sign errors", "Formula misapplication"],
-                    "summary": "Student struggles with algebraic equations"
-                }),
-                "summary": "Weak point analysis for Algebra",
-            },
-            {
-                "report_type": "recommendation",
-                "data": json.dumps({
-                    "recommendations": [
-                        {"type": "practice", "action": "Complete exercises 1-10", "estimated_time": "30 minutes"}
-                    ],
-                    "user_level": "intermediate"
-                }),
-                "summary": "Learning recommendations",
-            },
-        ]
-        
-        for report_data in reports_data:
-            report = AnalysisReport(user_id=user.user_id, **report_data)
-            session.add(report)
-            await session.flush()
-            self.created_ids['reports'].append(report.id)
-            print(f"    ✓ Created report: {report.report_type}")
-        
-        print(f"    ✓ Created {len(self.created_ids['reports'])} reports")
-    
     async def setup_all(self):
         """Setup all test data."""
         print("\n" + "="*60)
@@ -481,7 +287,7 @@ class TestDataGenerator:
                 user = await self.get_test_user(session)
                 print(f"  ✓ Found test user: {user.email}\n")
                 
-                # Create test data
+                # Create test data (core modules only)
                 await self.create_blogs(session, user)
                 print()
                 
@@ -492,18 +298,6 @@ class TestDataGenerator:
                 print()
                 
                 await self.create_mistake_logs(session, user)
-                print()
-                
-                await self.create_knowledge_points(session)
-                print()
-                
-                await self.create_school_infos(session, user)
-                print()
-                
-                await self.create_test_books(session, user)
-                print()
-                
-                await self.create_test_reports(session, user)
                 print()
                 
                 # Commit all changes
@@ -530,41 +324,49 @@ class TestDataGenerator:
         
         async with AsyncSessionLocal() as session:
             try:
+                user = await self.get_test_user(session)
+                
                 # Delete in reverse order (respecting foreign keys)
                 
-                # Delete reports
-                if self.created_ids['reports']:
+                # Delete feedback notifications, votes
+                if self.created_ids['feedbacks']:
                     await session.execute(
-                        delete(AnalysisReport).where(AnalysisReport.id.in_(self.created_ids['reports']))
+                        delete(FeedbackNotification).where(
+                            FeedbackNotification.feedback_id.in_(self.created_ids['feedbacks'])
+                        )
                     )
-                    print(f"  ✓ Deleted {len(self.created_ids['reports'])} reports")
-                
-                # Delete books
-                if self.created_ids['books']:
                     await session.execute(
-                        delete(UserBook).where(UserBook.id.in_(self.created_ids['books']))
+                        delete(FeedbackVote).where(
+                            FeedbackVote.feedback_id.in_(self.created_ids['feedbacks'])
+                        )
                     )
-                    print(f"  ✓ Deleted {len(self.created_ids['books'])} books")
                 
-                # Delete school mappings
-                user = await self.get_test_user(session)
-                await session.execute(
-                    delete(UserSchoolMapping).where(UserSchoolMapping.user_id == user.user_id)
-                )
-                
-                # Delete school infos
-                if self.created_ids['school_infos']:
+                # Delete feedbacks
+                if self.created_ids['feedbacks']:
                     await session.execute(
-                        delete(SchoolInfo).where(SchoolInfo.id.in_(self.created_ids['school_infos']))
+                        delete(Feedback).where(Feedback.id.in_(self.created_ids['feedbacks']))
                     )
-                    print(f"  ✓ Deleted {len(self.created_ids['school_infos'])} schools")
+                    print(f"  ✓ Deleted {len(self.created_ids['feedbacks'])} feedbacks")
                 
-                # Delete knowledge points (cascade will handle QuestionKnowledge)
-                if self.created_ids['knowledge_points']:
+                # Delete blog comments, likes
+                if self.created_ids['blogs']:
                     await session.execute(
-                        delete(KnowledgePoint).where(KnowledgePoint.id.in_(self.created_ids['knowledge_points']))
+                        delete(BlogComment).where(
+                            BlogComment.blog_id.in_(self.created_ids['blogs'])
+                        )
                     )
-                    print(f"  ✓ Deleted {len(self.created_ids['knowledge_points'])} knowledge points")
+                    await session.execute(
+                        delete(BlogLike).where(
+                            BlogLike.blog_id.in_(self.created_ids['blogs'])
+                        )
+                    )
+                
+                # Delete blogs
+                if self.created_ids['blogs']:
+                    await session.execute(
+                        delete(Blog).where(Blog.blog_id.in_(self.created_ids['blogs']))
+                    )
+                    print(f"  ✓ Deleted {len(self.created_ids['blogs'])} blogs")
                 
                 # Delete mistake logs
                 await session.execute(
@@ -585,44 +387,6 @@ class TestDataGenerator:
                         delete(QuestionBank).where(QuestionBank.bank_id.in_(self.created_ids['question_banks']))
                     )
                     print(f"  ✓ Deleted {len(self.created_ids['question_banks'])} question banks")
-                
-                # Delete feedback notifications, votes
-                await session.execute(
-                    delete(FeedbackNotification).where(
-                        FeedbackNotification.feedback_id.in_(self.created_ids['feedbacks'])
-                    )
-                )
-                await session.execute(
-                    delete(FeedbackVote).where(
-                        FeedbackVote.feedback_id.in_(self.created_ids['feedbacks'])
-                    )
-                )
-                
-                # Delete feedbacks
-                if self.created_ids['feedbacks']:
-                    await session.execute(
-                        delete(Feedback).where(Feedback.id.in_(self.created_ids['feedbacks']))
-                    )
-                    print(f"  ✓ Deleted {len(self.created_ids['feedbacks'])} feedbacks")
-                
-                # Delete blog comments, likes
-                await session.execute(
-                    delete(BlogComment).where(
-                        BlogComment.blog_id.in_(self.created_ids['blogs'])
-                    )
-                )
-                await session.execute(
-                    delete(BlogLike).where(
-                        BlogLike.blog_id.in_(self.created_ids['blogs'])
-                    )
-                )
-                
-                # Delete blogs
-                if self.created_ids['blogs']:
-                    await session.execute(
-                        delete(Blog).where(Blog.blog_id.in_(self.created_ids['blogs']))
-                    )
-                    print(f"  ✓ Deleted {len(self.created_ids['blogs'])} blogs")
                 
                 await session.commit()
                 
