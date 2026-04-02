@@ -165,4 +165,5 @@ async def post_question(
     db.add(book_infor)
     await db.flush()
     await db.refresh(book_infor)
+    await db.commit()  # Commit the transaction
     return book_infor
