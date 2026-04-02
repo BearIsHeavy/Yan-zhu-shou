@@ -16,3 +16,4 @@ logs/
 uploads/bios/*
 uploads/blogs/*
 data_fetcher/*
+test_api/test_files

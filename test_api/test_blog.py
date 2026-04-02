@@ -118,7 +118,8 @@ class TestBlogAPIs(BaseTest):
     
     async def test_get_blog(self):
         """Test GET /blogs/{id} endpoint."""
-        blog_id = self.created_blog_id or self.get_first_blog_id()
+        # Use existing blog first, only use created_blog_id if we don't have existing ones
+        blog_id = self.get_first_blog_id() or self.created_blog_id
         
         if not blog_id:
             self._log_result("GET /blogs/{id}", False, "No blog available")
@@ -141,7 +142,8 @@ class TestBlogAPIs(BaseTest):
     
     async def test_like_blog(self):
         """Test POST /blogs/{id}/like endpoint."""
-        blog_id = self.created_blog_id or self.get_first_blog_id()
+        # Use existing blog first, only use created_blog_id if we don't have existing ones
+        blog_id = self.get_first_blog_id() or self.created_blog_id
         
         if not blog_id:
             self._log_result("POST /blogs/{id}/like", False, "No blog available")
@@ -164,7 +166,8 @@ class TestBlogAPIs(BaseTest):
     
     async def test_get_like_status(self):
         """Test GET /blogs/{id}/like endpoint."""
-        blog_id = self.created_blog_id or self.get_first_blog_id()
+        # Use existing blog first, only use created_blog_id if we don't have existing ones
+        blog_id = self.get_first_blog_id() or self.created_blog_id
         
         if not blog_id:
             self._log_result("GET /blogs/{id}/like", False, "No blog available")
@@ -204,7 +207,8 @@ class TestBlogAPIs(BaseTest):
     
     async def test_add_comment(self):
         """Test POST /blogs/{id}/comments endpoint."""
-        blog_id = self.created_blog_id or self.get_first_blog_id()
+        # Use existing blog first, only use created_blog_id if we don't have existing ones
+        blog_id = self.get_first_blog_id() or self.created_blog_id
         
         if not blog_id:
             self._log_result("POST /blogs/{id}/comments", False, "No blog available")
@@ -228,7 +232,8 @@ class TestBlogAPIs(BaseTest):
     
     async def test_list_comments(self):
         """Test GET /blogs/{id}/comments endpoint."""
-        blog_id = self.created_blog_id or self.get_first_blog_id()
+        # Use existing blog first, only use created_blog_id if we don't have existing ones
+        blog_id = self.get_first_blog_id() or self.created_blog_id
         
         if not blog_id:
             self._log_result("GET /blogs/{id}/comments", False, "No blog available")
