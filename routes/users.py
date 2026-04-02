@@ -49,6 +49,7 @@ async def user_login(
         )
 
     # Cache user data in Redis for faster subsequent access (only if Redis is available)
+    # Note: Do NOT cache hash_password for security reasons
     if redis:
         cache_ttl = 300
         try:
@@ -56,9 +57,9 @@ async def user_login(
                 "user_id": user.user_id,
                 "email": user.email,
                 "name": user.name,
-                "hash_password": user.hash_password,
                 "phone": user.phone,
                 "gender": user.gender,
+                "role": user.role,
                 "created_at": user.created_at.isoformat() if user.created_at else None
             }
             await redis.setex(f"user:{user.email}", cache_ttl, json.dumps(user_dict))
@@ -104,6 +105,7 @@ async def user_register(
     await db.refresh(new_user)
 
     # Cache the new user data (only if Redis is available)
+    # Note: Do NOT cache hash_password for security reasons
     if redis:
         cache_ttl = 300
         try:
@@ -111,9 +113,9 @@ async def user_register(
                 "user_id": new_user.user_id,
                 "email": new_user.email,
                 "name": new_user.name,
-                "hash_password": new_user.hash_password,
                 "phone": new_user.phone,
                 "gender": new_user.gender,
+                "role": new_user.role,
                 "created_at": new_user.created_at.isoformat() if new_user.created_at else None
             }
             await redis.setex(f"user:{new_user.email}", cache_ttl, json.dumps(user_dict))

@@ -70,11 +70,10 @@ async def vote_feedback(
     
     # Check existing vote
     existing_vote = await get_user_vote(db, feedback_id, user_id)
-    
+
     if existing_vote:
         # Remove vote (toggle off)
         await db.delete(existing_vote)
-        feedback.vote_count = max(0, feedback.vote_count - 1)
         has_voted = False
     else:
         # Add vote (toggle on)
@@ -83,20 +82,22 @@ async def vote_feedback(
             user_id=user_id,
         )
         db.add(vote)
-        feedback.vote_count += 1
         has_voted = True
-
-        # Check if threshold is reached and send notification
-        if feedback.vote_count >= FEEDBACK_VOTE_THRESHOLD:
-            await check_and_send_threshold_notification(db, feedback)
 
     await db.flush()
     await db.commit()
     await db.refresh(feedback)
+    
+    # vote_count is now a column_property, automatically calculated
+    vote_count = feedback.vote_count
+
+    # Check if threshold is reached and send notification
+    if has_voted and vote_count >= FEEDBACK_VOTE_THRESHOLD:
+        await check_and_send_threshold_notification(db, feedback)
 
     return {
         "has_voted": has_voted,
-        "vote_count": feedback.vote_count,
+        "vote_count": vote_count,
     }
 
 
@@ -107,34 +108,32 @@ async def get_vote_status(
 ) -> dict:
     """
     Get vote status for a feedback.
-    
+
     Args:
         db: Database session
         feedback_id: Feedback ID
         user_id: User ID
-        
+
     Returns:
         dict: {has_voted: bool, vote_count: int}
     """
-    # Get feedback
+    # Get feedback with vote_count (column_property handles this)
     result = await db.execute(
-        select(models.Feedback.vote_count)
+        select(models.Feedback)
         .where(models.Feedback.id == feedback_id)
     )
-    feedback_data = result.scalar_one_or_none()
-    
-    if feedback_data is None:
+    feedback = result.scalar_one_or_none()
+
+    if feedback is None:
         return {"has_voted": False, "vote_count": 0}
-    
-    vote_count = feedback_data
-    
+
     # Check if user has voted
     user_vote = await get_user_vote(db, feedback_id, user_id)
     has_voted = user_vote is not None
-    
+
     return {
         "has_voted": has_voted,
-        "vote_count": vote_count,
+        "vote_count": feedback.vote_count,
     }
 
 

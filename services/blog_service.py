@@ -63,7 +63,7 @@ async def list_blogs(
         user_id: Filter by author ID
         content_type: Filter by content type (markdown, html)
         tags: Filter by tags (comma-separated, blogs must have the tag)
-        sort_by: Sort field (created_at, updated_at, view_count, like_count)
+        sort_by: Sort field (created_at, updated_at, like_count)
         limit: Page size
         offset: Page offset
         include_unpublished: Include unpublished blogs (for owner)
@@ -144,9 +144,7 @@ async def list_blogs(
     total = total_result.scalar() or 0
 
     # Apply sorting
-    if sort_by == "view_count":
-        query = query.order_by(models.Blog.view_count.desc())
-    elif sort_by == "like_count":
+    if sort_by == "like_count":
         query = query.order_by(models.Blog.like_count.desc())
     elif sort_by == "updated_at":
         query = query.order_by(models.Blog.updated_at.desc())
@@ -207,7 +205,7 @@ async def create_blog(
         "content_file_path": blog.content_file_path,
         "content_type": blog.content_type,
         "is_published": blog.is_published,
-        "view_count": blog.view_count,
+        
         "like_count": blog.like_count,
         "comment_count": blog.comment_count,
         "created_at": blog.created_at,
@@ -292,18 +290,6 @@ async def delete_blog(
     return True
 
 
-async def increment_view_count(db: AsyncSession, blog_id: int) -> None:
-    """Increment blog view count."""
-    result = await db.execute(
-        select(models.Blog).where(models.Blog.blog_id == blog_id)
-    )
-    blog = result.scalar_one_or_none()
-    if blog:
-        blog.view_count += 1
-        await db.flush()
-        await db.commit()
-
-
 async def get_user_like(
     db: AsyncSession,
     blog_id: int,
@@ -345,7 +331,6 @@ async def toggle_like(
 
     if existing_like:
         await db.delete(existing_like)
-        blog.like_count = max(0, blog.like_count - 1)
         has_liked = False
     else:
         like = models.BlogLike(
@@ -353,12 +338,13 @@ async def toggle_like(
             user_id=user_id,
         )
         db.add(like)
-        blog.like_count += 1
         has_liked = True
 
     await db.flush()
+    await db.commit()
     await db.refresh(blog)
 
+    # like_count is now a column_property, automatically calculated
     return {
         "has_liked": has_liked,
         "like_count": blog.like_count,
@@ -533,9 +519,8 @@ async def delete_comment(
     await db.flush()
     await db.commit()
 
-    blog.comment_count = max(0, blog.comment_count - 1)
-    await db.flush()
-    await db.commit()
+    # comment_count is now computed from relationships, no need to update
+    await db.refresh(blog, attribute_names=["comments"])
 
     return True
 
@@ -564,8 +549,7 @@ async def get_blog_stats(db: AsyncSession, user_id: Optional[int] = None) -> dic
     draft_count = total_posts - published_count
 
     views_result = await db.execute(
-        select(func.coalesce(func.sum(models.Blog.view_count), 0))
-        .select_from(models.Blog)
+        select(0)  # view_count removed
         .where(base_filter)
     )
     total_views = views_result.scalar() or 0

@@ -13,16 +13,15 @@ import os
 from datetime import datetime
 from typing import Any, List, Dict, Tuple, Set
 
-from sqlalchemy import String, Integer, DateTime, Text, select
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import select
 
-# Import models and schemas
+# Import models and database
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import models
 from models.user_school_mapping import UserSchoolMapping
+from database import AsyncSessionLocal
 
 
 # =============================================================================
@@ -42,74 +41,13 @@ SPECIAL_REGION_CODES: Set[str] = {
     '15', '45', '46', '52', '53', '54', '62', '63', '64', '65'
 }
 
-# =============================================================================
-# Database Configuration
-# =============================================================================
-
-DATABASE_URL = "postgresql+asyncpg://api:api@localhost:5432/fastapi_db"
-
-engine = create_async_engine(DATABASE_URL, echo=False)
-async_session = async_sessionmaker(engine, expire_on_commit=False)
-
-
-# =============================================================================
-# Database Models (Local for script usage)
-# =============================================================================
-
-class Base(DeclarativeBase):
-    pass
-
-
-class SchoolInfo(Base):
-    __tablename__ = "school_info"
-
-    id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    city: Mapped[str] = mapped_column(String(50))
-    region: Mapped[int] = mapped_column(Integer)
-    school_code: Mapped[str] = mapped_column(String(20))
-    school_name: Mapped[str] = mapped_column(String(100))
-    college_code: Mapped[str] = mapped_column(String(20))
-    college_name: Mapped[str] = mapped_column(String(100))
-    major_code: Mapped[str] = mapped_column(String(20))
-    major_name: Mapped[str] = mapped_column(String(100))
-    direction_code: Mapped[str] = mapped_column(String(20))
-    direction_name: Mapped[str] = mapped_column(String(100))
-    adjustment_count: Mapped[int] = mapped_column(Integer)
-    create_time: Mapped[datetime] = mapped_column(DateTime)
-    remarks: Mapped[str] = mapped_column(Text, nullable=True)
-    
-    # Progress tracking
-    cutoff_score: Mapped[str] = mapped_column(String(20), nullable=True)
-    contact_phone: Mapped[str] = mapped_column(String(50), nullable=True)
-    supervisor_name: Mapped[str] = mapped_column(String(100), nullable=True)
-    supervisor_contact: Mapped[str] = mapped_column(String(100), nullable=True)
-    email_status: Mapped[int] = mapped_column(Integer, default=0)
-
 
 # =============================================================================
 # Helper Functions
 # =============================================================================
 
-# Global log file path
-_log_file_path = None
-
-def set_log_file(path: str):
-    """Set log file path for output"""
-    global _log_file_path
-    _log_file_path = path
-
-def log_message(message: str):
-    """Print message and write to log file if set"""
-    print(message)
-    if _log_file_path:
-        try:
-            with open(_log_file_path, "a", encoding="utf-8") as f:
-                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                f.write(f"[{timestamp}] {message}\n")
-        except Exception:
-            pass  # Ignore log file errors
-
 def convert_city_code_to_name(code: str) -> Tuple[str, int]:
+    """Convert city code to city name and region type."""
     place = 2 if code in SPECIAL_REGION_CODES else 1
     city_name = CITY_MAP.get(code, "未知")
     return city_name, place
@@ -119,29 +57,25 @@ def convert_city_code_to_name(code: str) -> Tuple[str, int]:
 # Database Operations
 # =============================================================================
 
-async def init_db() -> None:
-    """Create tables if they don't exist."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    log_message("✓ Database tables initialized.")
-
-
 async def insert_batch_data(rows: List[List[Any]], user_id: int) -> Tuple[int, int, int]:
-    """Insert data with UPSERT and create user-school mapping."""
+    """Insert data with UPSERT and create user-school mapping.
+    
+    Uses the shared database session from database.py.
+    """
     inserted = 0
     updated = 0
     skipped = 0
 
-    async with async_session() as session:
+    async with AsyncSessionLocal() as session:
         for row in rows:
             try:
                 school_id = row[0]
-                
+
                 # Parse create_time
                 new_create_time = datetime.strptime(row[12], "%Y-%m-%d %H:%M:%S")
 
                 # Check if school exists
-                stmt = select(SchoolInfo).where(SchoolInfo.id == school_id)
+                stmt = select(models.SchoolInfo).where(models.SchoolInfo.id == school_id)
                 result = await session.execute(stmt)
                 existing = result.scalar_one_or_none()
 
@@ -163,7 +97,7 @@ async def insert_batch_data(rows: List[List[Any]], user_id: int) -> Tuple[int, i
                         skipped += 1
                 else:
                     # Insert new school
-                    new_entry = SchoolInfo(
+                    new_entry = models.SchoolInfo(
                         id=row[0], city=row[1], region=row[2],
                         school_code=row[3], school_name=row[4],
                         college_code=row[5], college_name=row[6],
@@ -177,7 +111,7 @@ async def insert_batch_data(rows: List[List[Any]], user_id: int) -> Tuple[int, i
                     session.add(new_entry)
                     await session.commit()
                     inserted += 1
-                
+
                 # Create user-school mapping (always)
                 mapping_stmt = select(UserSchoolMapping).where(
                     UserSchoolMapping.user_id == user_id,
@@ -185,7 +119,7 @@ async def insert_batch_data(rows: List[List[Any]], user_id: int) -> Tuple[int, i
                 )
                 mapping_result = await session.execute(mapping_stmt)
                 existing_mapping = mapping_result.scalar_one_or_none()
-                
+
                 if not existing_mapping:
                     mapping = UserSchoolMapping(user_id=user_id, school_id=school_id)
                     session.add(mapping)
@@ -193,7 +127,7 @@ async def insert_batch_data(rows: List[List[Any]], user_id: int) -> Tuple[int, i
 
             except Exception as e:
                 await session.rollback()
-                print(f"✗ Error processing record {row[0]}: {e}")
+                print(f"Error processing record {row[0]}: {e}")
                 skipped += 1
 
     return inserted, updated, skipped
@@ -278,45 +212,26 @@ async def process_school_data(
     Args:
         json_directory: Directory containing JSON files
         user_id: User ID for creating user-school mappings
-        log_file: Optional log file path
+        log_file: Optional log file path for detailed logging
 
     Returns:
         Tuple of (inserted, updated, skipped) counts
     """
-    # Set log file if provided
-    if log_file:
-        set_log_file(log_file)
-    
-    log_message("=" * 60)
-    log_message("CHSI Data Processor")
-    log_message("=" * 60)
-
-    # Initialize database
-    log_message("\n[1/3] Initializing database...")
-    await init_db()
-
     # Load data
-    log_message(f"\n[2/3] Loading data from '{json_directory}/'...")
     all_data = load_all_json_files(json_directory)
 
     if not all_data:
-        log_message("✗ No data to process. Exiting.")
+        print("No data to process. Exiting.")
         return 0, 0, 0
 
-    log_message(f"\n✓ Total records: {len(all_data)}")
+    print(f"Total records: {len(all_data)}")
 
     # Process and insert
-    log_message("\n[3/3] Processing and inserting data...")
+    print("Processing and inserting data...")
     store_data = process_data(all_data)
     inserted, updated, skipped = await insert_batch_data(store_data, user_id)
 
-    log_message("\n" + "=" * 60)
-    log_message("Processing Complete!")
-    log_message(f"  - Total:     {len(store_data)}")
-    log_message(f"  - Inserted:  {inserted}")
-    log_message(f"  - Updated:   {updated}")
-    log_message(f"  - Unchanged: {skipped}")
-    log_message("=" * 60)
+    print(f"Complete! Total: {len(store_data)}, Inserted: {inserted}, Updated: {updated}, Unchanged: {skipped}")
 
     return inserted, updated, skipped
 

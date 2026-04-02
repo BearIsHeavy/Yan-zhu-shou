@@ -71,7 +71,6 @@ class BlogResponse(BaseModel):
     content_file_path: Optional[str] = None
     content_type: str
     is_published: bool
-    view_count: int
     like_count: int
     comment_count: int
     created_at: datetime
@@ -89,7 +88,6 @@ class BlogListItem(BaseModel):
     title: str
     content_type: str
     is_published: bool
-    view_count: int
     like_count: int
     comment_count: int
     created_at: datetime

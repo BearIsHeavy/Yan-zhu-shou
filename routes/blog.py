@@ -34,11 +34,11 @@ async def list_blogs(
     - **user_id**: Filter by author ID
     - **content_type**: Filter by content type (markdown, html)
     - **tags**: Filter by tags (comma-separated)
-    - **sort_by**: Sort by (created_at, updated_at, view_count, like_count)
+    - **sort_by**: Sort by (created_at, updated_at, like_count)
     - **page**: Page number (1-indexed)
     - **page_size**: Items per page
     """
-    if sort_by not in ["created_at", "updated_at", "view_count", "like_count"]:
+    if sort_by not in ["created_at", "updated_at", "like_count"]:
         sort_by = "created_at"
 
     offset = (page - 1) * page_size
@@ -76,7 +76,7 @@ async def list_blogs(
             title=blog.title,
             content_type=blog.content_type,
             is_published=blog.is_published,
-            view_count=blog.view_count,
+            
             like_count=blog.like_count,
             comment_count=blog.comment_count,
             created_at=blog.created_at,
@@ -150,7 +150,7 @@ async def get_my_blogs(
             title=blog.title,
             content_type=blog.content_type,
             is_published=blog.is_published,
-            view_count=blog.view_count,
+            
             like_count=blog.like_count,
             comment_count=blog.comment_count,
             created_at=blog.created_at,
@@ -317,7 +317,7 @@ async def create_blog(
         content_file_path=blog["content_file_path"],
         content_type=blog["content_type"],
         is_published=blog["is_published"],
-        view_count=blog["view_count"],
+        
         like_count=blog["like_count"],
         comment_count=blog["comment_count"],
         created_at=blog["created_at"],
@@ -353,7 +353,6 @@ async def get_blog(
                 detail="You don't have access to this blog post",
             )
 
-    await blog_service.increment_view_count(db, blog_id)
 
     has_liked = False
     if current_user:
@@ -368,8 +367,6 @@ async def get_blog(
             name=blog.user.name,
         )
 
-    # Refresh only the view_count, not relationships
-    await db.refresh(blog, attribute_names=["view_count"])
 
     return blog_schemas.BlogResponse(
         blog_id=blog.blog_id,
@@ -378,7 +375,7 @@ async def get_blog(
         content_file_path=blog.content_file_path,
         content_type=blog.content_type,
         is_published=blog.is_published,
-        view_count=blog.view_count,
+        
         like_count=blog.like_count,
         comment_count=blog.comment_count,
         created_at=blog.created_at,
