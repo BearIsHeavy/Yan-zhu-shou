@@ -5,12 +5,19 @@ Loads settings from environment variables with sensible defaults.
 """
 
 import os
+from pathlib import Path
 from typing import Optional
+
+from dotenv import load_dotenv
+
+# Load .env file from project root (override existing env vars)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(dotenv_path=_PROJECT_ROOT / ".env", override=True)
 
 
 class AIAnalysisConfig:
     """AI Analysis configuration."""
-    
+
     # LLM Configuration
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4-turbo-preview")

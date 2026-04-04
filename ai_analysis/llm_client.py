@@ -7,16 +7,63 @@ Supports OpenAI-compatible APIs including:
 - Self-hosted models (vLLM, Ollama, etc.)
 """
 
+import asyncio
 import json
 import logging
-from typing import Optional, List, Dict, Any
+import re
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 import httpx
 
 from ai_analysis.config import AIAnalysisConfig
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_json(text: str) -> Optional[str]:
+    """
+    Extract JSON from text, handling:
+    - Markdown code blocks (```json ... ``` or ``` ... ```)
+    - Plain JSON strings
+    - JSON embedded in conversational text
+    """
+    text = text.strip()
+
+    # Try markdown code blocks first
+    patterns = [
+        r'```json\s*(.*?)\s*```',
+        r'```\s*(.*?)\s*```',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, re.DOTALL)
+        if match:
+            return match.group(1).strip()
+
+    # Try to find JSON object/array in text
+    # Look for { ... } or [ ... ]
+    brace_start = text.find('{')
+    bracket_start = text.find('[')
+
+    if brace_start != -1 or bracket_start != -1:
+        # Use the first occurring delimiter
+        start_idx = min(
+            i for i in [brace_start, bracket_start] if i != -1
+        )
+        # Find matching closing bracket
+        open_char = text[start_idx]
+        close_char = '}' if open_char == '{' else ']'
+        depth = 0
+        for i in range(start_idx, len(text)):
+            if text[i] == open_char:
+                depth += 1
+            elif text[i] == close_char:
+                depth -= 1
+                if depth == 0:
+                    return text[start_idx:i + 1]
+
+    # Fall back: try entire text as JSON
+    return text.strip()
 
 
 class LLMClient:
@@ -45,6 +92,40 @@ class LLMClient:
         
         # Remove trailing slash
         self.base_url = self.base_url.rstrip("/")
+
+    @staticmethod
+    def parse_json_response(response: str) -> Optional[Any]:
+        """
+        Parse JSON from LLM response, handling:
+        - Markdown code blocks
+        - Embedded JSON in text
+        - Stringified JSON arrays (common with small models)
+        """
+        json_str = _extract_json(response)
+        if not json_str:
+            return None
+
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError:
+            # Small models sometimes stringify array elements as strings:
+            # '["{\"name\":\"Apple\"}", ...]' → [{"name":"Apple"}, ...]
+            try:
+                raw_list = json.loads(json_str)
+                if isinstance(raw_list, list) and all(isinstance(item, str) for item in raw_list):
+                    fixed = []
+                    for item in raw_list:
+                        try:
+                            fixed.append(json.loads(item))
+                        except json.JSONDecodeError:
+                            fixed.append(item)
+                    if all(isinstance(item, dict) for item in fixed):
+                        return fixed
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+            logger.debug(f"Failed to parse JSON: {json_str[:300]}")
+            return None
     
     async def chat(
         self,
@@ -157,31 +238,28 @@ Provide your analysis in JSON format."""
         ]
         
         response = await self.chat(messages)
-        
+
         # Parse JSON response
-        try:
-            # Extract JSON from response (handle markdown code blocks)
-            if "```json" in response:
-                response = response.split("```json")[1].split("```")[0]
-            elif "```" in response:
-                response = response.split("```")[1].split("```")[0]
-            
-            result = json.loads(response.strip())
+        result = self.parse_json_response(response)
+
+        if result and isinstance(result, dict):
+            result.setdefault("weak_points", [])
+            result.setdefault("error_patterns", [])
+            result.setdefault("recommendations", [])
+            result.setdefault("summary", "")
             result["analyzed_at"] = datetime.utcnow().isoformat()
             result["questions_analyzed"] = len(wrong_questions)
-            
             return result
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse AI response: {e}")
-            return {
-                "weak_points": [],
-                "error_patterns": ["Unable to analyze"],
-                "recommendations": ["Please try again"],
-                "summary": "Analysis failed",
-                "analyzed_at": datetime.utcnow().isoformat(),
-                "questions_analyzed": len(wrong_questions),
-            }
+
+        logger.error(f"Failed to parse AI response: {response[:300]}")
+        return {
+            "weak_points": [],
+            "error_patterns": ["Unable to analyze"],
+            "recommendations": ["Please try again"],
+            "summary": "Analysis failed",
+            "analyzed_at": datetime.utcnow().isoformat(),
+            "questions_analyzed": len(wrong_questions),
+        }
     
     async def extract_knowledge_points(
         self,
@@ -214,18 +292,13 @@ Return a JSON list with structure:
         ]
         
         response = await self.chat(messages)
-        
-        try:
-            if "```json" in response:
-                response = response.split("```json")[1].split("```")[0]
-            elif "```" in response:
-                response = response.split("```")[1].split("```")[0]
-            
-            return json.loads(response.strip())
-            
-        except json.JSONDecodeError:
-            logger.error("Failed to parse knowledge points")
-            return []
+
+        result = self.parse_json_response(response)
+        if result and isinstance(result, list):
+            return result
+
+        logger.error("Failed to parse knowledge points")
+        return []
     
     async def generate_recommendations(
         self,
@@ -272,19 +345,10 @@ Generate 5-10 personalized recommendations."""
         ]
         
         response = await self.chat(messages)
-        
-        try:
-            if "```json" in response:
-                response = response.split("```json")[1].split("```")[0]
-            elif "```" in response:
-                response = response.split("```")[1].split("```")[0]
-            
-            return json.loads(response.strip())
-            
-        except json.JSONDecodeError:
-            logger.error("Failed to parse recommendations")
-            return []
 
+        result = self.parse_json_response(response)
+        if result and isinstance(result, list):
+            return result
 
-# Import asyncio for retry logic
-import asyncio
+        logger.error("Failed to parse recommendations")
+        return []
