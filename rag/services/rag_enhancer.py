@@ -269,14 +269,8 @@ Respond in JSON format:
             }
     
     def _parse_json_response(self, response: str) -> Dict:
-        """Parse JSON from LLM response."""
-        # Try to extract JSON from response
-        if "```json" in response:
-            response = response.split("```json")[1].split("```")[0]
-        elif "```" in response:
-            response = response.split("```")[1].split("```")[0]
-        
-        return json.loads(response.strip())
+        """Parse JSON from LLM response using the robust parser."""
+        return self.llm.parse_json_response(response) or {}
     
     async def answer_question_with_rag(
         self,

@@ -194,7 +194,29 @@ async def get_wrong_questions(
     # Execute query
     result = await db.execute(query)
     rows = result.all()
-    
+
+    # Pre-compute mistake counts with a single GROUP BY query (avoid N+1)
+    question_nos = [question.No for _, question, _ in rows]
+    if question_nos:
+        mistake_counts_query = (
+            select(
+                models.UserQuestionLog.question_no,
+                func.count().label("mistake_count")
+            )
+            .where(
+                and_(
+                    models.UserQuestionLog.user_id == current_user.user_id,
+                    models.UserQuestionLog.question_no.in_(question_nos),
+                    models.UserQuestionLog.is_correct == False
+                )
+            )
+            .group_by(models.UserQuestionLog.question_no)
+        )
+        mistake_counts_result = await db.execute(mistake_counts_query)
+        mistake_counts = {row.question_no: row.mistake_count for row in mistake_counts_result}
+    else:
+        mistake_counts = {}
+
     # Build response
     questions = []
     for log, question, bank in rows:
@@ -207,17 +229,8 @@ async def get_wrong_questions(
                 q_status = schemas.QuestionStatusEnum.NEW
             else:
                 q_status = schemas.QuestionStatusEnum.REVIEWING
-        
-        # Count mistakes for this question
-        mistake_count_query = select(func.count()).where(
-            and_(
-                models.UserQuestionLog.user_id == current_user.user_id,
-                models.UserQuestionLog.question_no == question.No,
-                models.UserQuestionLog.is_correct == False
-            )
-        )
-        mistake_count_result = await db.execute(mistake_count_query)
-        mistake_count = mistake_count_result.scalar() or 0
+
+        mistake_count = mistake_counts.get(question.No, 0)
         
         questions.append(
             schemas.WrongQuestionResponse(

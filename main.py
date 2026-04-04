@@ -1,4 +1,7 @@
+import logging
 import os
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -11,7 +14,40 @@ from books.routes import books as books_router
 from reports.routes import reports as reports_router
 from rag.routes import rag as rag_router
 
-app = FastAPI()
+from database import engine
+
+
+# ==========================================
+# Logging configuration
+# ==========================================
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s | %(levelname)-7s | %(name)s:%(lineno)d | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+
+
+# ==========================================
+# Application lifespan
+# ==========================================
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application startup and shutdown."""
+    # Startup
+    logger.info("Starting YanZhuShou server")
+    logger.info("Database engine initialized")
+
+    yield
+
+    # Shutdown
+    logger.info("Shutting down YanZhuShou server")
+    await engine.dispose()
+    logger.info("Database engine disposed")
+
+
+app = FastAPI(lifespan=lifespan)
 
 # Configure CORS middleware
 # Allow origins for development environment
@@ -63,3 +99,12 @@ app.include_router(reports_router, prefix="/api/reports", tags=["Analysis Report
 
 # RAG Module Routes
 app.include_router(rag_router, prefix="/api/rag", tags=["RAG"])
+
+
+# ==========================================
+# Health check endpoint
+# ==========================================
+@app.get("/health", tags=["Health"])
+async def health_check():
+    """Health check endpoint for infrastructure monitoring."""
+    return {"status": "healthy"}
