@@ -1,6 +1,7 @@
 """School Info API - Simple sorting and filtering"""
 
 import json
+import logging
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 
@@ -16,6 +17,8 @@ from redis.asyncio import Redis
 import models
 from schemas import school_info as schemas
 from dependencies import get_db, get_current_user, get_redis
+
+logger = logging.getLogger(__name__)
 
 # Add project root to path for importing services
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -116,12 +119,12 @@ def update_curl_in_script(curl_command: str, user_id: int = None) -> bool:
         # Log
         if user_id:
             log_to_file(user_id, f"✓ Curl command saved to {curl_command_file}")
-        print(f"Curl command saved to {curl_command_file}")
+        logger.info("Curl command saved to %s", curl_command_file)
         return True
     except Exception as e:
         if user_id:
             log_to_file(user_id, f"✗ Error saving curl command: {e}")
-        print(f"Error saving curl command: {e}")
+        logger.error("Error saving curl command: %s", e)
         return False
 
 

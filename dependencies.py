@@ -1,6 +1,9 @@
 import json
+import logging
 import os
+from datetime import datetime
 from typing import Optional
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +15,7 @@ from database import get_db, get_redis
 from routes import auth
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/users/login")
+logger = logging.getLogger(__name__)
 
 
 async def get_current_user(
@@ -42,16 +46,21 @@ async def get_current_user(
             cached_data = await redis.get(cache_key)
             if cached_data:
                 user_dict = json.loads(cached_data)
-                # Reconstruct user object from cache
-                # Note: We still need to query DB to get a session-bound ORM object
-                # But we can use cached data to avoid loading relationships
-                result = await db.execute(select(models.User).where(models.User.email == email))
-                user = result.scalar_one_or_none()
-                if user:
-                    return user
+                # Reconstruct a lightweight user object from cache
+                # Avoid the DB query entirely when cache is valid
+                user = models.User()
+                user.user_id = user_dict["user_id"]
+                user.email = user_dict["email"]
+                user.name = user_dict["name"]
+                user.phone = user_dict.get("phone")
+                user.gender = user_dict.get("gender")
+                user.role = user_dict.get("role", "user")
+                if user_dict.get("created_at"):
+                    user.created_at = datetime.fromisoformat(user_dict["created_at"])
+                logger.debug(f"User {email} loaded from Redis cache")
+                return user
         except Exception as e:
-            # Log error but continue to DB query if Redis fails
-            print(f"Warning: Failed to read user cache: {e}")
+            logger.warning("Failed to read user cache: %s", e)
 
     # Query database
     result = await db.execute(select(models.User).where(models.User.email == email))
@@ -79,8 +88,8 @@ async def get_current_user(
                 "created_at": str(user.created_at) if user.created_at else None
             }
             await redis.setex(cache_key, cache_ttl, json.dumps(user_dict))
+            logger.debug(f"User {email} cached in Redis (TTL={cache_ttl}s)")
         except Exception as e:
-            # Log error but don't fail the request if Redis fails
-            print(f"Warning: Failed to cache user data: {e}")
+            logger.warning("Failed to cache user data: %s", e)
 
     return user

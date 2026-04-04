@@ -15,6 +15,13 @@ from models.feedback import Feedback, FeedbackVote, FeedbackNotification, Feedba
 from models.blog import Blog, BlogLike, BlogComment
 from models.school_info import SchoolInfo
 from models.user_school_mapping import UserSchoolMapping
+from books.models.user_book import UserBook
+from knowledge.models.knowledge_point import KnowledgePoint
+from knowledge.models.question_knowledge import QuestionKnowledge
+from reports.models.analysis_report import AnalysisReport
+from rag.models.knowledge_embedding import KnowledgeEmbedding
+from rag.models.document_chunk import DocumentChunk
+from rag.models.rag_query import RAGQuery
 
 # Export all models
 __all__ = [
@@ -36,4 +43,11 @@ __all__ = [
     "BlogComment",
     "SchoolInfo",
     "UserSchoolMapping",
+    "UserBook",
+    "KnowledgePoint",
+    "QuestionKnowledge",
+    "AnalysisReport",
+    "KnowledgeEmbedding",
+    "DocumentChunk",
+    "RAGQuery",
 ]
