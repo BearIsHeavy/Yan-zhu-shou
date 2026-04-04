@@ -47,7 +47,7 @@ class DocumentChunk(Base):
     page_number = Column(Integer, nullable=True)
     chunk_index = Column(Integer, nullable=True)
     token_count = Column(Integer, nullable=True)
-    metadata = Column(Text, nullable=True)  # JSON string
+    extra_meta = Column("metadata", Text, nullable=True)  # JSON string
     created_at = Column(DateTime, server_default=func.now())
     
     # Relationships

@@ -166,7 +166,7 @@ class RetrievalService:
                 'content': chunk_obj.content,
                 'page_number': chunk_obj.page_number,
                 'similarity': float(similarity),
-                'metadata': json.loads(chunk_obj.metadata) if chunk_obj.metadata else {}
+                'metadata': json.loads(chunk_obj.extra_meta) if chunk_obj.extra_meta else {}
             })
         
         return results

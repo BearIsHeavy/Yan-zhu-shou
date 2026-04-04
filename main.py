@@ -9,10 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from routes import users, question_banks, questions, mistake, feedback, blog, school_info
 
 # Import AI analysis module routes
-from knowledge.routes import knowledge as knowledge_router
-from books.routes import books as books_router
-from reports.routes import reports as reports_router
-from rag.routes import rag as rag_router
+from knowledge.routes.knowledge import router as knowledge_router
+from books.routes.books import router as books_router
+from reports.routes.reports import router as reports_router
+from rag.routes.rag import router as rag_router
 
 from database import engine
 

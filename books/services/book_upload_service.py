@@ -39,7 +39,8 @@ class BookUploadService:
         self.user_id = user_id
         self.upload_dir = os.path.join(BOOKS_UPLOAD_DIR, str(user_id))
     
-    def _generate_unique_filename(self, original_filename: str) -> str:
+    @staticmethod
+    def _generate_unique_filename(original_filename: str) -> str:
         """
         Generate a unique filename preserving extension.
         
@@ -53,7 +54,8 @@ class BookUploadService:
         unique_id = uuid.uuid4().hex[:12]
         return f"{unique_id}{ext}"
     
-    def _get_file_type(self, filename: str) -> Optional[str]:
+    @staticmethod
+    def _get_file_type(filename: str) -> Optional[str]:
         """
         Get file type from extension.
         

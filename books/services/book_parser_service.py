@@ -29,38 +29,9 @@ class BookParserService:
         """
         self.db = db
         self.llm = LLMClient() if AIAnalysisConfig.is_available() else None
-    
-    def read_file_content(self, file_path: str) -> Optional[str]:
-        """
-        Read file content based on file type.
-        
-        Args:
-            file_path: Path to the file
-            
-        Returns:
-            File content as string or None
-        """
-        if not os.path.exists(file_path):
-            logger.error(f"File not found: {file_path}")
-            return None
-        
-        ext = os.path.splitext(file_path)[1].lower()
-        
-        try:
-            if ext == '.pdf':
-                return self._read_pdf(file_path)
-            elif ext in ['.md', '.markdown']:
-                return self._read_markdown(file_path)
-            elif ext == '.docx':
-                return self._read_docx(file_path)
-            else:
-                logger.error(f"Unsupported file type: {ext}")
-                return None
-        except Exception as e:
-            logger.error(f"Failed to read file {file_path}: {e}")
-            return None
-    
-    def _read_pdf(self, file_path: str) -> Optional[str]:
+
+    @staticmethod
+    def _read_pdf(file_path: str) -> Optional[str]:
         """Read PDF file content."""
         try:
             from pypdf import PdfReader
@@ -80,32 +51,65 @@ class BookParserService:
             logger.error(f"PDF parsing failed: {e}")
             return None
     
-    def _read_markdown(self, file_path: str) -> Optional[str]:
+    @staticmethod
+    def _read_markdown(file_path: str) -> Optional[str]:
         """Read Markdown file content."""
         with open(file_path, 'r', encoding='utf-8') as f:
             return f.read()
-    
-    def _read_docx(self, file_path: str) -> Optional[str]:
+
+    @staticmethod
+    def _read_docx(file_path: str) -> Optional[str]:
         """Read DOCX file content."""
         try:
             from docx import Document
-            
+
             doc = Document(file_path)
             text_parts = []
-            
+
             for paragraph in doc.paragraphs:
                 text_parts.append(paragraph.text)
-            
+
             return '\n'.join(text_parts)
-            
+
         except ImportError:
             logger.warning("python-docx not installed. DOCX parsing unavailable.")
             return None
         except Exception as e:
             logger.error(f"DOCX parsing failed: {e}")
             return None
-    
-    def extract_chapters_markdown(self, content: str) -> List[Dict[str, Any]]:
+
+    def read_file_content(self, file_path: str) -> Optional[str]:
+        """
+        Read file content based on file type.
+
+        Args:
+            file_path: Path to the file
+
+        Returns:
+            File content as string or None
+        """
+        if not os.path.exists(file_path):
+            logger.error(f"File not found: {file_path}")
+            return None
+
+        ext = os.path.splitext(file_path)[1].lower()
+
+        try:
+            if ext == '.pdf':
+                return self._read_pdf(file_path)
+            elif ext in ['.md', '.markdown']:
+                return self._read_markdown(file_path)
+            elif ext == '.docx':
+                return self._read_docx(file_path)
+            else:
+                logger.error(f"Unsupported file type: {ext}")
+                return None
+        except Exception as e:
+            logger.error(f"Failed to read file {file_path}: {e}")
+            return None
+
+    @staticmethod
+    def extract_chapters_markdown(content: str) -> List[Dict[str, Any]]:
         """
         Extract chapter structure from Markdown content.
         
