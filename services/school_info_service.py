@@ -9,11 +9,14 @@ This module handles:
 
 import asyncio
 import json
+import logging
 import os
 from datetime import datetime
 from typing import Any, List, Dict, Tuple, Set
 
 from sqlalchemy import select
+
+logger = logging.getLogger(__name__)
 
 # Import models and database
 import sys
@@ -127,7 +130,7 @@ async def insert_batch_data(rows: List[List[Any]], user_id: int) -> Tuple[int, i
 
             except Exception as e:
                 await session.rollback()
-                print(f"Error processing record {row[0]}: {e}")
+                logger.error("Error processing record %s: %s", row[0], e)
                 skipped += 1
 
     return inserted, updated, skipped
@@ -142,7 +145,7 @@ def load_json_data(filepath: str) -> List[Dict[str, Any]]:
         with open(filepath, 'r', encoding='utf-8') as file:
             dict_info = json.load(file)
     except Exception as e:
-        print(f"✗ Error loading {filepath}: {e}")
+        logger.error("Error loading %s: %s", filepath, e)
         return []
     
     all_data = dict_info.get('msg', {}).get('data', {}).get('vo_list', {}).get('vos', [])
@@ -153,26 +156,26 @@ def load_all_json_files(directory: str = "Info") -> List[Dict[str, Any]]:
     import os
     
     all_data = []
-    
+
     if not os.path.exists(directory):
-        print(f"✗ Directory '{directory}' not found.")
+        logger.error("Directory '%s' not found.", directory)
         return []
-    
+
     json_files = sorted([f for f in os.listdir(directory) if f.endswith('.json')])
-    
+
     if not json_files:
-        print(f"✗ No JSON files found in '{directory}'.")
+        logger.error("No JSON files found in '%s'.", directory)
         return []
-    
-    print(f"✓ Found {len(json_files)} JSON files")
-    
+
+    logger.info("Found %d JSON files", len(json_files))
+
     for filename in json_files:
         filepath = os.path.join(directory, filename)
         file_data = load_json_data(filepath)
         if file_data:
             all_data.extend(file_data)
-            print(f"  ✓ Loaded {len(file_data)} records from {filename}")
-    
+            logger.info("Loaded %d records from %s", len(file_data), filename)
+
     return all_data
 
 
@@ -221,17 +224,20 @@ async def process_school_data(
     all_data = load_all_json_files(json_directory)
 
     if not all_data:
-        print("No data to process. Exiting.")
+        logger.warning("No data to process. Exiting.")
         return 0, 0, 0
 
-    print(f"Total records: {len(all_data)}")
+    logger.info("Total records: %d", len(all_data))
 
     # Process and insert
-    print("Processing and inserting data...")
+    logger.info("Processing and inserting data...")
     store_data = process_data(all_data)
     inserted, updated, skipped = await insert_batch_data(store_data, user_id)
 
-    print(f"Complete! Total: {len(store_data)}, Inserted: {inserted}, Updated: {updated}, Unchanged: {skipped}")
+    logger.info(
+        "Complete! Total: %d, Inserted: %d, Updated: %d, Unchanged: %d",
+        len(store_data), inserted, updated, skipped
+    )
 
     return inserted, updated, skipped
 

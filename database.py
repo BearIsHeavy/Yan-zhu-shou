@@ -1,9 +1,12 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
+import logging
 import os
 from dotenv import load_dotenv
 import redis.asyncio as redis
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -30,7 +33,7 @@ def get_redis_client() -> Optional[redis.Redis]:
                 decode_responses=True
             )
         except Exception as e:
-            print(f"Warning: Failed to connect to Redis: {e}")
+            logger.warning("Failed to connect to Redis: %s", e)
             return None
     return _redis_client
 
