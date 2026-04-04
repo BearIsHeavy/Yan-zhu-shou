@@ -35,13 +35,15 @@ ALLOWED_ORIGINS = get_allowed_origins()
 
 # For development: allow all origins (NOT recommended for production)
 # Set ALLOW_ALL_ORIGINS=true in .env for development
-if os.getenv("ALLOW_ALL_ORIGINS", "false").lower() == "true":
+ALLOW_ALL = os.getenv("ALLOW_ALL_ORIGINS", "false").lower() == "true"
+if ALLOW_ALL:
     ALLOWED_ORIGINS = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
+    # CORS spec: '*' with credentials is invalid — disable credentials when using '*'
+    allow_credentials=not ALLOW_ALL,
     allow_methods=["*"],
     allow_headers=["*"],
 )

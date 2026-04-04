@@ -11,9 +11,18 @@ from dotenv import load_dotenv
 
 # Configuration
 load_dotenv()
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
+SECRET_KEY = os.getenv("SECRET_KEY")
+
+# In production, SECRET_KEY must be set — refuse to start with a default key
+if not SECRET_KEY:
+    raise RuntimeError(
+        "SECRET_KEY environment variable is not set. "
+        "Generate a secure key and add it to your .env file:\n"
+        "  SECRET_KEY=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+    )
+
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES",30))
+ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
 
 # Password hashing configuration
 BCRYPT_ROUNDS = 12

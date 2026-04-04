@@ -12,10 +12,11 @@ Database Schema Reference: docs/数据库设计.sql
 """
 
 import json
+from datetime import datetime, timedelta
 from typing import Optional, List
-from datetime import datetime
+
 from fastapi import Depends, HTTPException, status, Query, APIRouter
-from sqlalchemy import select, and_, func, case, extract
+from sqlalchemy import select, and_, func, case, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -30,6 +31,11 @@ router = APIRouter()
 # ==========================================
 # HELPER FUNCTIONS
 # ==========================================
+
+def _seven_days_ago():
+    """Return datetime 7 days ago (PostgreSQL-compatible)."""
+    return datetime.utcnow() - timedelta(days=7)
+
 
 def map_question_type(qus_type: int) -> str:
     """Map qb_questions.qus_type integer to QuestionTypeEnum string."""
@@ -161,14 +167,14 @@ async def get_wrong_questions(
             query = query.where(
                 and_(
                     models.UserQuestionLog.is_mastered == False,
-                    models.UserQuestionLog.attempt_time >= func.date_sub(func.now(), interval=7)  # Recent
+                    models.UserQuestionLog.attempt_time >= _seven_days_ago()
                 )
             )
         elif status_filter == schemas.QuestionStatusEnum.REVIEWING:
             query = query.where(
                 and_(
                     models.UserQuestionLog.is_mastered == False,
-                    models.UserQuestionLog.attempt_time < func.date_sub(func.now(), interval=7)
+                    models.UserQuestionLog.attempt_time < _seven_days_ago()
                 )
             )
     
@@ -285,7 +291,7 @@ async def get_mistake_notebook_stats(
             models.UserQuestionLog.user_id == current_user.user_id,
             models.UserQuestionLog.is_correct == False,
             models.UserQuestionLog.is_mastered == False,
-            models.UserQuestionLog.attempt_time >= func.date_sub(func.now(), interval=7)
+            models.UserQuestionLog.attempt_time >= _seven_days_ago()
         )
     )
     new_result = await db.execute(new_query)

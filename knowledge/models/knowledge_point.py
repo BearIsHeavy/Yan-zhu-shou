@@ -5,7 +5,7 @@ Represents a knowledge point in the knowledge graph.
 Supports hierarchical structure through parent-child relationships.
 """
 
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, SmallInteger, Boolean
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, SmallInteger, Boolean, DateTime
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from database import Base

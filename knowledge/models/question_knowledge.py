@@ -4,7 +4,7 @@ Question-Knowledge Association Model.
 Links questions to knowledge points with weights.
 """
 
-from sqlalchemy import Column, Integer, Float, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, Float, ForeignKey, UniqueConstraint, DateTime
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from database import Base

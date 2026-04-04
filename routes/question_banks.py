@@ -149,7 +149,10 @@ async def post_question(
         result = await db.execute(select(models.QuestionBank).where(models.QuestionBank.name == infor.name))
         existing_book = result.scalar_one_or_none()
     except MultipleResultsFound as e:
-        return f"have a error: {e}"
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error: duplicate question bank name '{infor.name}' with multiple entries."
+        ) from e
 
     if existing_book:
         raise HTTPException(
