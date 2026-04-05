@@ -223,6 +223,10 @@ class KnowledgeService:
                 "subject": parent.subject,
                 "difficulty": parent.difficulty,
                 "description": parent.description,
+                "parent_id": parent.parent_id,
+                "is_active": parent.is_active,
+                "created_at": parent.created_at,
+                "updated_at": parent.updated_at,
                 "children": [],
             }
             
@@ -239,7 +243,8 @@ class KnowledgeService:
             
             for child in children:
                 node["children"].append(await build_node(child))
-            
+
+            node["children_count"] = len(children)
             return node
         
         tree = []
